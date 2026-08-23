@@ -1,21 +1,21 @@
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import { DefaultTheme, ThemeProvider } from 'expo-router';
 
 import { SessionProvider, useSession } from '@/context/auth-context';
+import { PrototypeProvider } from '@/context/prototype-context';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <SessionProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <SplashScreenController />
-        <RootNavigator />
-      </ThemeProvider>
+      <PrototypeProvider>
+        <ThemeProvider value={DefaultTheme}>
+          <SplashScreenController />
+          <RootNavigator />
+        </ThemeProvider>
+      </PrototypeProvider>
     </SessionProvider>
   );
 }
@@ -55,6 +55,9 @@ function RootNavigator() {
             presentation: 'card',
           }}
         />
+        <Stack.Screen name="forgot-password" />
+        <Stack.Screen name="mobile-login" />
+        <Stack.Screen name="otp" />
       </Stack.Protected>
     </Stack>
   );

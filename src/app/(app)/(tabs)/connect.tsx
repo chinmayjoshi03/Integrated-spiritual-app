@@ -1,0 +1,11 @@
+import { router } from 'expo-router';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { AppHeader, AppIcon, Card, Pill, Screen, SectionTitle, ui } from '@/components/karma-ui';
+import { Palette } from '@/constants/theme';
+
+const tiles = [
+  ['Community circle', 'Share reflections and ask questions', 'community', 'heart'], ['Upcoming events', 'Gather online and in person', 'events', 'calendar'], ['Give with intention', 'Support the work and the community', 'donations', 'spark'], ['Volunteer with us', 'Offer your time in service', 'volunteering', 'check'], ['Guides and mentors', 'Meet teachers you can follow', 'mentors', 'book'],
+];
+export default function ConnectScreen() { return <Screen><AppHeader title="Connect" subtitle="Belong to a living community" /><View><Text style={ui.title}>Together on the path</Text><Text style={ui.body}>Find people, gatherings, and ways to offer what you can.</Text></View><Pressable onPress={() => router.push('/flows/event-detail' as any)}><Card style={styles.event}><Pill>UPCOMING · 24 AUG</Pill><Text style={styles.eventTitle}>Full moon meditation</Text><Text style={ui.body}>A shared evening of silence and gentle chanting.</Text><Text style={styles.link}>View event →</Text></Card></Pressable><SectionTitle>Explore connection</SectionTitle><View style={styles.list}>{tiles.map(([title, detail, flow, icon]) => <Pressable key={flow} onPress={() => router.push(`/flows/${flow}` as any)}><Card style={styles.item}><AppIcon name={icon} active /><View style={{ flex: 1, gap: 3 }}><Text style={styles.itemTitle}>{title}</Text><Text style={ui.small}>{detail}</Text></View><Text style={styles.arrow}>›</Text></Card></Pressable>)}</View></Screen>; }
+const styles = StyleSheet.create({ event: { backgroundColor: Palette.goldSoft, gap: 8 }, eventTitle: { color: Palette.charcoal, fontFamily: 'serif', fontWeight: '700', fontSize: 26 }, link: { color: Palette.goldDark, fontWeight: '800', marginTop: 4 }, list: { gap: 10 }, item: { borderRadius: 20, paddingVertical: 15, flexDirection: 'row', alignItems: 'center', gap: 13 }, itemTitle: { color: Palette.charcoal, fontSize: 17, fontWeight: '700' }, arrow: { color: Palette.goldDark, fontSize: 28 } });

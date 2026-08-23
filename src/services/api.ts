@@ -1,9 +1,11 @@
 import { Platform } from 'react-native';
 
-// Use your machine's local IP when testing on a physical device.
-// For emulators: Android uses 10.0.2.2, iOS simulator uses localhost.
+// Use your machine's local IP when testing on a physical device via Expo Go.
+// Change this IP if your network address changes (run: ipconfig getifaddr en0).
+const LOCAL_IP = '10.19.201.190';
 const BASE_URL = Platform.select({
-  android: 'http://10.0.2.2:3001',
+  android: `http://${LOCAL_IP}:3001`,
+  ios: `http://${LOCAL_IP}:3001`,
   default: 'http://localhost:3001',
 });
 
