@@ -1,17 +1,24 @@
 const jwt = require('jsonwebtoken');
 
 /**
- * Middleware to verify JWT token from Authorization header.
- * Attaches decoded user to req.user if valid.
+ * Middleware to verify JWT token.
+ * Accepts token from:
+ *   1. Authorization: Bearer <token> header  (API calls)
+ *   2. ?token=<token> query param             (video streaming URLs used directly as src)
  */
 function authenticate(req, res, next) {
-  const authHeader = req.headers.authorization;
+  let token = null;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Access denied. No token provided.' });
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query.token) {
+    token = req.query.token;
   }
 
-  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ error: 'Access denied. No token provided.' });
+  }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);

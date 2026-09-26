@@ -44,7 +44,77 @@ export function Field({ label, ...props }: TextInputProps & { label: string }) {
 
 export function Pill({ children }: { children: string }) { return <View style={styles.pill}><Text style={styles.pillText}>{children}</Text></View>; }
 
+export function ProgressBar({ pct, height = 8 }: { pct: number; height?: number }) {
+  return (
+    <View style={[pbStyles.track, { height }]}>
+      <View style={[pbStyles.fill, { width: `${Math.min(100, Math.max(0, pct))}%` }]} />
+    </View>
+  );
+}
+
+export function StatCard({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <View style={scStyles.card}>
+      <Text style={scStyles.label}>{label}</Text>
+      <Text style={scStyles.value}>{value}</Text>
+      <Text style={scStyles.hint}>{hint}</Text>
+    </View>
+  );
+}
+
+export function ListItem({
+  icon,
+  title,
+  subtitle,
+  onPress,
+  right,
+  last = false,
+}: {
+  icon?: ReactNode;
+  title: string;
+  subtitle?: string;
+  onPress?: () => void;
+  right?: ReactNode;
+  last?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[liStyles.row, !last && liStyles.border]}
+    >
+      {icon ? <View style={liStyles.iconWrap}>{icon}</View> : null}
+      <View style={liStyles.copy}>
+        <Text style={liStyles.title}>{title}</Text>
+        {subtitle ? <Text style={liStyles.subtitle}>{subtitle}</Text> : null}
+      </View>
+      {right !== undefined ? right : onPress ? <Text style={liStyles.arrow}>›</Text> : null}
+    </Pressable>
+  );
+}
+
 export const ui = StyleSheet.create({ title: { fontFamily: 'serif', color: Palette.charcoal, fontSize: 29, fontWeight: '700' }, body: { color: Palette.stone, fontSize: 16, lineHeight: 23 }, small: { color: Palette.stone, fontSize: 13 } });
+
+const pbStyles = StyleSheet.create({
+  track: { width: '100%', borderRadius: 8, backgroundColor: Palette.goldSoft, overflow: 'hidden' },
+  fill: { height: '100%', borderRadius: 8, backgroundColor: Palette.gold },
+});
+
+const scStyles = StyleSheet.create({
+  card: { width: 200, backgroundColor: Palette.surface, borderRadius: 22, padding: 18, borderWidth: 1, borderColor: Palette.line, gap: 6 },
+  label: { color: Palette.stone, fontSize: 14, fontWeight: '600' },
+  value: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 32, fontWeight: '700' },
+  hint: { color: Palette.stoneLight, fontSize: 12 },
+});
+
+const liStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 13, minHeight: 56, paddingVertical: 4 },
+  border: { borderBottomWidth: 1, borderBottomColor: Palette.line },
+  iconWrap: { width: 36, alignItems: 'center' },
+  copy: { flex: 1, gap: 2 },
+  title: { color: Palette.charcoal, fontSize: 16, fontWeight: '600' },
+  subtitle: { color: Palette.stone, fontSize: 13 },
+  arrow: { color: Palette.goldDark, fontSize: 26 },
+});
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Palette.ivory }, scroll: { flexGrow: 1 }, screenContent: { width: '100%', maxWidth: 760, alignSelf: 'center', paddingHorizontal: Spacing.three, paddingTop: Spacing.two, paddingBottom: 118, gap: Spacing.three },

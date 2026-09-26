@@ -1,43 +1,380 @@
-import { router } from 'expo-router';
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
+import {
+    ActivityIndicator,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
+} from 'react-native';
 
-import { AppHeader, AppIcon, Card, ActionButton, Pill, Screen, SectionTitle, ui } from '@/components/karma-ui';
+import {
+    ActionButton,
+    AppHeader,
+    AppIcon,
+    Card,
+    Pill,
+    ProgressBar,
+    Screen,
+    SectionTitle,
+    StatCard,
+    ui,
+} from '@/components/karma-ui';
 import { Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
-import { usePrototype } from '@/context/prototype-context';
-
-const tasks = ['Morning prayer', 'Reading', 'Reflection'];
+import {
+    type Course,
+    type DailyTask,
+    apiGetCourses,
+    apiGetTodayTasks,
+    apiToggleTask,
+} from '@/services/api';
 
 export default function HomeScreen() {
-  const { user } = useSession();
-  const { completedTasks, toggleTask, courseProgress } = usePrototype();
-  const name = user?.name || user?.email?.split('@')[0] || 'Seeker';
-  return <Screen>
-    <AppHeader title="Karma Vajra" action={<Pressable onPress={() => router.push('/flows/notifications' as any)}><AppIcon name="bell" /></Pressable>} />
-    <View><Text style={ui.title}>Good morning, {name}</Text><Text style={ui.body}>Take a moment for yourself today.</Text></View>
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stats}>
-      <Stat label="Today’s sadhana" value={`${completedTasks.length}/5`} hint="Tasks completed" />
-      <Stat label="Meditation" value="12" hint="Sessions this month" />
-      <Stat label="Learning" value={`${courseProgress}%`} hint="Course progress" />
-    </ScrollView>
-    <SectionTitle action={<Text style={styles.counter}>{completedTasks.length}/5</Text>}>Today’s spiritual practice</SectionTitle>
-    <Card>
-      {tasks.map((task, index) => { const done = completedTasks.includes(task); return <Pressable key={task} onPress={() => toggleTask(task)} style={[styles.task, index === tasks.length - 1 && styles.lastTask]}><AppIcon name={done ? 'check' : 'circle'} /><Text style={styles.taskName}>{task}</Text><Text style={[styles.status, done ? styles.done : styles.pending]}>{done ? 'Done' : 'Pending'}</Text></Pressable>; })}
-      <ActionButton label="Continue sadhana" onPress={() => router.push('/flows/sadhana' as any)} />
-    </Card>
-    <SectionTitle>Continue learning</SectionTitle>
-    <Pressable onPress={() => router.push('/flows/course-detail' as any)}><Card style={styles.learning}><View style={styles.courseArt}><Text style={styles.courseGlyph}>✦</Text></View><Pill>IN PROGRESS</Pill><Text style={styles.cardTitle}>Foundations of mindful living</Text><Text style={ui.small}>{courseProgress}% complete · Continue lesson 3</Text></Card></Pressable>
-    <SectionTitle>For your journey</SectionTitle>
-    <View style={styles.grid}>
-      <JourneyCard icon="play" title="Today’s meditation" detail="Stillness within · 12 min" flow="meditation-player" />
-      <JourneyCard icon="calendar" title="Upcoming event" detail="Full moon meditation" flow="event-detail" />
-      <JourneyCard icon="heart" title="Daily check-in" detail="How are you feeling?" flow="mood" />
-      <JourneyCard icon="spark" title="Guru’s message" detail="A word for today" flow="guide" />
-    </View>
-  </Screen>;
+  const { user, session } = useSession();
+  const firstName = user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'Seeker';
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
+  const [tasks, setTasks] = useState<DailyTask[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
+  const [inProgressCourse, setInProgressCourse] = useState<Course | null>(null);
+  const [firstCourse, setFirstCourse] = useState<Course | null>(null);
+  const [coursesLoading, setCoursesLoading] = useState(true);
+
+  // Load today's tasks
+  const loadTasks = useCallback(async () => {
+    if (!session) return;
+    const res = await apiGetTodayTasks(session);
+    if (res.data) setTasks(res.data.tasks);
+    setTasksLoading(false);
+  }, [session]);
+
+  // Load courses to find the in-progress one
+  const loadCourses = useCallback(async () => {
+    if (!session) return;
+    const res = await apiGetCourses(session);
+    if (res.data) {
+      const courses = res.data.courses;
+      const active = courses.find((c) => c.progress_pct > 0 && c.progress_pct < 100);
+      setInProgressCourse(active ?? null);
+      setFirstCourse(courses[0] ?? null);
+    }
+    setCoursesLoading(false);
+  }, [session]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadTasks();
+      loadCourses();
+    }, [loadTasks, loadCourses])
+  );
+
+  const handleToggleTask = async (task: DailyTask) => {
+    if (!session) return;
+    // Optimistic update
+    setTasks((prev) =>
+      prev.map((t) => (t.id === task.id ? { ...t, completed: !t.completed } : t))
+    );
+    const res = await apiToggleTask(session, task.id);
+    if (res.error) {
+      // Revert on failure
+      setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? { ...t, completed: task.completed } : t))
+      );
+    }
+  };
+
+  const completedCount = tasks.filter((t) => t.completed).length;
+  const featuredCourse = inProgressCourse ?? firstCourse;
+
+  return (
+    <Screen>
+      {/* Header */}
+      <AppHeader
+        title="Karma Vajra"
+        action={
+          <Pressable
+            style={styles.bellBtn}
+            onPress={() => router.push('/flows/notifications' as any)}
+          >
+            <AppIcon name="bell" />
+          </Pressable>
+        }
+      />
+
+      {/* Greeting */}
+      <View style={styles.greetBlock}>
+        <Text style={ui.title}>
+          {greeting},{'\n'}
+          {firstName}
+        </Text>
+        <Text style={[ui.body, { marginTop: 6 }]}>
+          Take a moment for yourself today.
+        </Text>
+      </View>
+
+      {/* Stat strip */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.statsRow}
+      >
+        <StatCard
+          label="Today's practice"
+          value={`${completedCount}/${tasks.length || 5}`}
+          hint="Tasks completed"
+        />
+        <StatCard
+          label="Meditation"
+          value="12"
+          hint="Sessions this month"
+        />
+        <StatCard
+          label="Learning"
+          value={featuredCourse ? `${featuredCourse.progress_pct}%` : '—'}
+          hint="Course progress"
+        />
+      </ScrollView>
+
+      {/* Daily practice checklist */}
+      <SectionTitle
+        action={
+          <Text style={styles.counter}>
+            {completedCount}/{tasks.length || 5}
+          </Text>
+        }
+      >
+        Today's practice
+      </SectionTitle>
+
+      <Card>
+        {tasksLoading ? (
+          <View style={styles.taskLoading}>
+            <ActivityIndicator color={Palette.gold} />
+          </View>
+        ) : (
+          tasks.map((task, idx) => (
+            <Pressable
+              key={task.id}
+              onPress={() => handleToggleTask(task)}
+              style={[styles.taskRow, idx === tasks.length - 1 && styles.taskRowLast]}
+            >
+              <View style={[styles.taskCheck, task.completed && styles.taskCheckDone]}>
+                {task.completed && <Text style={styles.taskCheckMark}>✓</Text>}
+              </View>
+              <Text
+                style={[styles.taskName, task.completed && styles.taskNameDone]}
+              >
+                {task.task_name}
+              </Text>
+              <Text
+                style={[
+                  styles.taskStatus,
+                  task.completed ? styles.taskStatusDone : styles.taskStatusPending,
+                ]}
+              >
+                {task.completed ? 'Done' : 'Pending'}
+              </Text>
+            </Pressable>
+          ))
+        )}
+        <ActionButton
+          label="View full sadhana"
+          onPress={() => router.push('/flows/sadhana' as any)}
+          variant="quiet"
+        />
+      </Card>
+
+      {/* Continue learning */}
+      {!coursesLoading && featuredCourse && (
+        <>
+          <SectionTitle>Continue learning</SectionTitle>
+          <Pressable onPress={() => router.push(`/courses/${featuredCourse.id}` as any)}>
+            <Card style={styles.courseCard}>
+              <View style={styles.courseArt}>
+                <Text style={styles.courseGlyph}>◉</Text>
+              </View>
+              <Pill>
+                {featuredCourse.progress_pct > 0 ? 'IN PROGRESS' : featuredCourse.level.toUpperCase()}
+              </Pill>
+              <Text style={styles.courseTitle} numberOfLines={2}>
+                {featuredCourse.title}
+              </Text>
+              <Text style={ui.small}>
+                {featuredCourse.progress_pct > 0
+                  ? `${featuredCourse.progress_pct}% complete · ${featuredCourse.completed_lessons} of ${featuredCourse.total_lessons} lessons`
+                  : `${featuredCourse.total_lessons} lessons · Begin today`}
+              </Text>
+              {featuredCourse.progress_pct > 0 && (
+                <ProgressBar pct={featuredCourse.progress_pct} />
+              )}
+            </Card>
+          </Pressable>
+        </>
+      )}
+
+      {/* Journey grid */}
+      <SectionTitle>For your journey</SectionTitle>
+      <View style={styles.grid}>
+        <JourneyCard
+          icon="play"
+          title="Today's meditation"
+          detail="Stillness within · 12 min"
+          onPress={() => router.push('/meditation/1' as any)}
+        />
+        <JourneyCard
+          icon="calendar"
+          title="Upcoming event"
+          detail="Full moon meditation"
+          onPress={() => router.push('/flows/event-detail' as any)}
+        />
+        <JourneyCard
+          icon="heart"
+          title="Daily check-in"
+          detail="How are you feeling?"
+          onPress={() => router.push('/flows/mood' as any)}
+        />
+        <JourneyCard
+          icon="spark"
+          title="Guru's message"
+          detail="A word for today"
+          onPress={() => router.push('/flows/guide' as any)}
+        />
+        <JourneyCard
+          icon="practice"
+          title="Divine Shop"
+          detail="Sacred items & offerings"
+          onPress={() => router.push('/shop' as any)}
+        />
+      </View>
+    </Screen>
+  );
 }
 
-function Stat({ label, value, hint }: { label: string; value: string; hint: string }) { return <View style={styles.stat}><Text style={styles.statLabel}>{label}</Text><Text style={styles.statValue}>{value}</Text><Text style={styles.statHint}>{hint}</Text></View>; }
-function JourneyCard({ icon, title, detail, flow }: { icon: string; title: string; detail: string; flow: string }) { return <Pressable style={styles.journey} onPress={() => router.push(`/flows/${flow}` as any)}><AppIcon name={icon} /><Text style={styles.journeyTitle}>{title}</Text><Text style={ui.small}>{detail}</Text></Pressable>; }
+function JourneyCard({
+  icon,
+  title,
+  detail,
+  onPress,
+}: {
+  icon: string;
+  title: string;
+  detail: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={styles.journeyCard} onPress={onPress}>
+      <AppIcon name={icon} active />
+      <Text style={styles.journeyTitle}>{title}</Text>
+      <Text style={ui.small}>{detail}</Text>
+    </Pressable>
+  );
+}
 
-const styles = StyleSheet.create({ stats: { gap: 12, paddingRight: 16 }, stat: { width: 205, backgroundColor: Palette.surface, borderRadius: 24, padding: 18, borderWidth: 1, borderColor: Palette.line, gap: 6 }, statLabel: { color: Palette.stone, fontSize: 15, fontWeight: '600' }, statValue: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 34, fontWeight: '700' }, statHint: { color: Palette.stoneLight, fontSize: 13 }, counter: { color: Palette.goldDark, fontSize: 18, fontWeight: '800' }, task: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 54, borderBottomWidth: 1, borderBottomColor: Palette.line }, lastTask: { borderBottomWidth: 0 }, taskName: { flex: 1, color: Palette.charcoal, fontSize: 17, fontWeight: '600' }, status: { fontSize: 15, fontWeight: '700' }, done: { color: Palette.goldDark }, pending: { color: Palette.stoneLight }, learning: { gap: 10 }, courseArt: { height: 135, borderRadius: 20, backgroundColor: Palette.goldSoft, alignItems: 'center', justifyContent: 'center' }, courseGlyph: { fontSize: 47, color: Palette.goldDark }, cardTitle: { color: Palette.charcoal, fontFamily: 'serif', fontWeight: '700', fontSize: 21 }, grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 }, journey: { width: '48%', flexGrow: 1, minHeight: 146, backgroundColor: Palette.surface, borderRadius: 22, padding: 15, gap: 8, borderWidth: 1, borderColor: Palette.line }, journeyTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 17, fontWeight: '700' } });
+const styles = StyleSheet.create({
+  bellBtn: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 21,
+    backgroundColor: Palette.surface,
+    borderWidth: 1,
+    borderColor: Palette.line,
+  },
+
+  greetBlock: { gap: 2 },
+
+  statsRow: { gap: 12, paddingRight: 4, paddingBottom: 4 },
+
+  counter: {
+    color: Palette.goldDark,
+    fontSize: 17,
+    fontWeight: '800',
+    fontFamily: 'serif',
+  },
+
+  // Tasks
+  taskLoading: { paddingVertical: 20, alignItems: 'center' },
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+    minHeight: 56,
+    borderBottomWidth: 1,
+    borderBottomColor: Palette.line,
+  },
+  taskRowLast: { borderBottomWidth: 0 },
+  taskCheck: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    borderColor: Palette.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  taskCheckDone: {
+    backgroundColor: Palette.gold,
+    borderColor: Palette.gold,
+  },
+  taskCheckMark: { color: Palette.charcoal, fontSize: 13, fontWeight: '800' },
+  taskName: {
+    flex: 1,
+    color: Palette.charcoal,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  taskNameDone: { color: Palette.stoneLight, textDecorationLine: 'line-through' },
+  taskStatus: { fontSize: 13, fontWeight: '700' },
+  taskStatusDone: { color: Palette.goldDark },
+  taskStatusPending: { color: Palette.stoneLight },
+
+  // Course card
+  courseCard: { gap: 10, padding: 0, overflow: 'hidden' },
+  courseArt: {
+    height: 140,
+    backgroundColor: Palette.goldSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  courseGlyph: { fontSize: 52, color: Palette.goldDark },
+  courseTitle: {
+    color: Palette.charcoal,
+    fontFamily: 'serif',
+    fontSize: 21,
+    fontWeight: '700',
+    lineHeight: 27,
+    paddingHorizontal: 20,
+  },
+
+  // Journey grid
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  journeyCard: {
+    width: '47%',
+    flexGrow: 1,
+    minHeight: 140,
+    backgroundColor: Palette.surface,
+    borderRadius: 22,
+    padding: 16,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Palette.line,
+    shadowColor: Palette.charcoal,
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
+  },
+  journeyTitle: {
+    color: Palette.charcoal,
+    fontFamily: 'serif',
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 22,
+  },
+});
