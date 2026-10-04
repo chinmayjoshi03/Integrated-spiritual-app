@@ -1,0 +1,41 @@
+.lessons-list {
+    margin-bottom: var(--spacing-xl);
+  }
+  
+  .lesson-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    background-color: #fffdf8;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-sm);
+  }
+  
+  .lesson-position {
+    font-weight: 700;
+    color: var(--color-primary);
+    width: 24px;
+  }
+  
+  .lesson-info {
+    flex: 1;
+  }
+  
+  .lesson-delete-btn {
+    background: none;
+    border: none;
+    color: var(--color-error);
+  }
+
+  .lesson-row-clickable {
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+  
+  .lesson-row-clickable:hover {
+    background-color: #f7f1e6;
+  }

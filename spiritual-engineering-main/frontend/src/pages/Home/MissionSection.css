@@ -1,0 +1,18 @@
+.mission {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: var(--spacing-xl) var(--spacing-lg);
+    text-align: center;
+  }
+  
+  .mission-title {
+    font-size: 1.8rem;
+    color: var(--color-primary-dark);
+    margin-bottom: var(--spacing-md);
+  }
+  
+  .mission-text {
+    font-size: 1.05rem;
+    color: var(--color-text-muted);
+    line-height: 1.8;
+  }

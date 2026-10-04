@@ -1,0 +1,207 @@
+.dash-layout {
+  display: flex;
+  height: 100vh;
+  background-color: #f7f1e6;
+  overflow: hidden;
+}
+
+.dash-main {
+  flex: 1;
+  height: 100vh;
+  overflow-y: auto;
+  padding: var(--spacing-xl);
+}
+.dash-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
+}
+
+.dash-widgets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: var(--spacing-lg);
+}
+
+.dash-widget-card {
+  background-color: #fffdf8;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: var(--spacing-lg);
+}
+
+.dash-widget-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-family: var(--font-family-heading);
+  font-weight: 600;
+  font-size: 1.3rem;
+  color: var(--color-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.dash-widget-subtext {
+  color: #8a8175;
+  font-size: 0.9rem;
+  margin-bottom: var(--spacing-sm);
+}
+
+.dash-widget-value {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--color-secondary);
+  margin-bottom: 4px;
+}
+
+.dash-widget-meta {
+  font-size: 0.75rem;
+  color: var(--color-primary);
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.dash-checklist {
+  list-style: none;
+  margin-bottom: var(--spacing-md);
+}
+
+.dash-checklist li {
+  padding: 6px 0;
+  color: var(--color-text);
+  font-size: 0.95rem;
+}
+
+.dash-widget-event {
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: 0.9rem;
+}
+
+.dash-widget-event:last-child {
+  border-bottom: none;
+}
+
+.dash-widget-btn {
+  background-color: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px var(--spacing-md);
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-top: var(--spacing-sm);
+}
+
+.dash-widget-btn:hover {
+  background-color: var(--color-primary-dark);
+}
+.dash-widget-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: rgba(201, 154, 36, 0.15);
+  color: var(--color-primary);
+}
+
+.dash-widget-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
+.dash-widget-link {
+  font-size: 0.85rem;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.dash-event-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dash-event-row:last-child {
+  border-bottom: none;
+}
+
+.dash-event-date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--color-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.dash-event-date strong {
+  font-size: 1.2rem;
+  color: var(--color-secondary);
+}
+
+.dash-event-info {
+  flex: 1;
+}
+
+.dash-event-title {
+  font-weight: 600;
+  color: var(--color-text);
+  font-size: 0.95rem;
+}
+
+.dash-event-meta {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.dash-event-register-btn {
+  background: none;
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+  border-radius: 6px;
+  padding: 6px var(--spacing-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.dash-event-register-btn:hover {
+  background-color: var(--color-primary);
+  color: #fff;
+}
+.dash-quote-card {
+  background-color: #fffdf8;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: var(--spacing-lg);
+  margin-top: var(--spacing-lg);
+  text-align: center;
+}
+
+.dash-quote-label {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-xs);
+}
+
+.dash-quote-text {
+  font-family: var(--font-family-heading);
+  font-size: 1.4rem;
+  color: var(--color-secondary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.dash-quote-hint {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-md);
+}

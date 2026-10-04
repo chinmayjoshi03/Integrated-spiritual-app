@@ -1,0 +1,139 @@
+.volunteer-filters {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xl);
+}
+
+.volunteer-filters input,
+.volunteer-filters select {
+  width: 100%;
+  padding: 12px var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--color-text);
+  font-family: inherit;
+}
+
+.volunteer-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-xl);
+}
+
+.volunteer-stats article {
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #fffdf8;
+}
+
+.volunteer-stats p {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+
+.volunteer-stats strong {
+  color: var(--color-secondary);
+  font-size: 1.25rem;
+}
+
+.volunteer-apply-panel {
+  padding: var(--spacing-lg);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: #fffdf8;
+}
+
+.volunteer-apply-panel h2 {
+  color: var(--color-secondary);
+  margin-bottom: var(--spacing-sm);
+  font-size: 1.2rem;
+}
+
+.volunteer-apply-panel p {
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-md);
+}
+
+.volunteer-apply-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.volunteer-apply-actions button,
+.volunteer-apply-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.volunteer-apply-primary {
+  border: 1px solid var(--color-secondary);
+  background: var(--color-primary);
+  color: var(--color-secondary);
+}
+
+.volunteer-apply-secondary {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-secondary);
+}
+
+.volunteer-apply-success {
+  color: #3d6b45;
+}
+
+.volunteer-apply-error {
+  color: var(--color-error);
+}
+
+.volunteer-admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: var(--spacing-lg);
+}
+
+.volunteer-admin-actions button {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-secondary);
+  font-weight: 600;
+}
+
+.volunteer-attendance-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.volunteer-attendance-inputs input {
+  width: 140px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+@media (max-width: 900px) {
+  .volunteer-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .volunteer-filters {
+    grid-template-columns: 1fr;
+  }
+}

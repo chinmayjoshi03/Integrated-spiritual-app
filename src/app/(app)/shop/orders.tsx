@@ -83,7 +83,7 @@ export default function ShopOrdersScreen() {
           </Card>
         ) : (
           <>
-            <SectionTitle>{orders.length} order{orders.length !== 1 ? 's' : ''}</SectionTitle>
+            <SectionTitle>{`${orders.length} order${orders.length !== 1 ? 's' : ''}`}</SectionTitle>
             <View style={styles.list}>
               {orders.map((order) => {
                 const meta = getItemMeta(order.item_category);

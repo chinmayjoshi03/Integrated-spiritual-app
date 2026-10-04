@@ -1,0 +1,452 @@
+name: Build and Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+      - v0.1
+  workflow_dispatch:
+
+env:
+  EC2_HOST: ${{ secrets.EC2_HOST }}
+  EC2_USER: ${{ secrets.EC2_USER }}
+  EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+  DEPLOY_PATH: /home/${{ secrets.EC2_USER }}/techeinnovation-apps/spiritual-platform
+  DOMAIN_NAME: spiritual.techeinnovation.com
+  BACKEND_PORT: 5002
+
+jobs:
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Build frontend
+        run: npm run build --workspace=frontend
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+
+      - name: Verify build output
+        run: |
+          echo "Checking frontend dist directory:"
+          ls -la frontend/dist
+
+      - name: Upload frontend build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/dist/
+          retention-days: 1
+
+  build-backend:
+    name: Build Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies (backend validation)
+        run: |
+          cd backend
+          npm ci --include=optional
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-build
+          path: |
+            backend/
+            !backend/node_modules/
+            !backend/.env*
+          retention-days: 1
+
+  deploy:
+    name: Deploy to EC2
+    needs: [build-frontend, build-backend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend-dist/
+
+      - name: Download backend build
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-build
+          path: backend/
+
+      - name: Create deployment package
+        run: |
+          mkdir -p deploy-package/frontend deploy-package/backend
+          cp -r frontend-dist/. deploy-package/frontend/
+          cp -r backend/. deploy-package/backend/
+
+          # Generate backend production .env from repository secrets
+          cat > deploy-package/backend/.env << 'EOF'
+          PORT=5002
+          NODE_ENV=production
+          DB_HOST=${{ secrets.DB_HOST }}
+          DB_PORT=${{ secrets.DB_PORT }}
+          DB_NAME=${{ secrets.DB_NAME }}
+          DB_USER=${{ secrets.DB_USER }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          BACKEND_URL=${{ secrets.BACKEND_URL }}
+          FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+          GMAIL_USER=${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}
+          EOF
+
+          echo "Deployment package prepared:"
+          ls -la deploy-package/frontend
+          ls -la deploy-package/backend
+
+      - name: Prepare EC2 deployment directory & backup previous build
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ env.EC2_SSH_KEY }}
+          script: |
+            set -e
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+            # Create base deployment path
+            mkdir -p ${{ env.DEPLOY_PATH }}
+
+            # Ensure logs directory exists for PM2
+            mkdir -p /home/${{ env.EC2_USER }}/logs
+            if [ -d /home/ubuntu ]; then
+              mkdir -p /home/ubuntu/logs 2>/dev/null || true
+            fi
+
+            # Preserve uploaded media/files if backend/uploads exists
+            if [ -d "${{ env.DEPLOY_PATH }}/backend/uploads" ]; then
+              mkdir -p ${{ env.DEPLOY_PATH }}/uploads_temp
+              cp -rn ${{ env.DEPLOY_PATH }}/backend/uploads/* ${{ env.DEPLOY_PATH }}/uploads_temp/ 2>/dev/null || true
+            fi
+
+            # Backup current deployment before receiving new files
+            TIMESTAMP=$(date +%s)
+            if [ -d "${{ env.DEPLOY_PATH }}/backend" ]; then
+              mv ${{ env.DEPLOY_PATH }}/backend ${{ env.DEPLOY_PATH }}/backend.backup.$TIMESTAMP
+            fi
+            if [ -d "${{ env.DEPLOY_PATH }}/frontend" ]; then
+              mv ${{ env.DEPLOY_PATH }}/frontend ${{ env.DEPLOY_PATH }}/frontend.backup.$TIMESTAMP
+            fi
+
+            # Retain only the latest 2 backups to prevent disk overflow
+            find ${{ env.DEPLOY_PATH }} -maxdepth 1 -name "*.backup.*" -type d | sort -r | tail -n +3 | xargs -r rm -rf
+
+      - name: Transfer files to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ env.EC2_SSH_KEY }}
+          source: "deploy-package/*"
+          target: "${{ env.DEPLOY_PATH }}/"
+          strip_components: 1
+
+      - name: Setup and execute backend on port 5002
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ env.EC2_SSH_KEY }}
+          script: |
+            set -e
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+            # Ensure PM2 is installed
+            if ! command -v pm2 &> /dev/null; then
+              echo "PM2 not found in PATH, installing pm2 globally..."
+              npm install -g pm2
+            fi
+
+            # Restore preserved uploads if available
+            if [ -d "${{ env.DEPLOY_PATH }}/uploads_temp" ]; then
+              mkdir -p ${{ env.DEPLOY_PATH }}/backend/uploads
+              cp -rn ${{ env.DEPLOY_PATH }}/uploads_temp/* ${{ env.DEPLOY_PATH }}/backend/uploads/ 2>/dev/null || true
+              rm -rf ${{ env.DEPLOY_PATH }}/uploads_temp
+            fi
+
+            # Ensure .env is explicitly written on EC2
+            cat > ${{ env.DEPLOY_PATH }}/backend/.env << 'EOF'
+            PORT=5002
+            NODE_ENV=production
+            DB_HOST=${{ secrets.DB_HOST }}
+            DB_PORT=${{ secrets.DB_PORT }}
+            DB_NAME=${{ secrets.DB_NAME }}
+            DB_USER=${{ secrets.DB_USER }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            BACKEND_URL=${{ secrets.BACKEND_URL }}
+            FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+            GMAIL_USER=${{ secrets.GMAIL_USER }}
+            GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}
+            EOF
+
+            cd ${{ env.DEPLOY_PATH }}/backend
+
+            # Install production dependencies natively on EC2
+            npm ci --omit=dev --include=optional
+
+            # Start or restart backend with PM2 using ecosystem configuration
+            pm2 delete spiritual-backend 2>/dev/null || true
+            pm2 start ecosystem.config.cjs --env production
+            pm2 save
+
+            # Verify PM2 status
+            pm2 status spiritual-backend
+
+      - name: Configure SSL with Certbot and reload Nginx for spiritual.techeinnovation.com
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ env.EC2_SSH_KEY }}
+          script: |
+            set -e
+
+            # Install nginx and certbot if not present
+            if ! command -v nginx &> /dev/null; then
+              sudo apt-get update && sudo apt-get install -y nginx
+            fi
+            if ! command -v certbot &> /dev/null; then
+              sudo apt-get update && sudo apt-get install -y certbot python3-certbot-nginx
+            fi
+
+            # Ensure Nginx (www-data) has permission to traverse and read frontend dist files
+            chmod 755 /home/${{ env.EC2_USER }}
+            chmod -R 755 ${{ env.DEPLOY_PATH }}/frontend
+
+            EXISTING_CONF="/etc/nginx/sites-available/${{ env.DOMAIN_NAME }}"
+            SSL_CERT="/etc/letsencrypt/live/${{ env.DOMAIN_NAME }}/fullchain.pem"
+            SSL_KEY="/etc/letsencrypt/live/${{ env.DOMAIN_NAME }}/privkey.pem"
+
+            # Check if SSL certificate already exists
+            if [ ! -f "$SSL_CERT" ]; then
+              echo "SSL certificate not found. Ensuring HTTP port 80 is working for ACME verification..."
+              sudo tee "$EXISTING_CONF" > /dev/null << 'NGINX_HTTP_CONF'
+            server {
+                listen 80;
+                listen [::]:80;
+                server_name spiritual.techeinnovation.com;
+
+                client_max_body_size 20M;
+
+                root ${{ env.DEPLOY_PATH }}/frontend;
+                index index.html index.htm;
+
+                location /.well-known/acme-challenge/ {
+                    root /var/www/html;
+                }
+
+                location / {
+                    try_files $uri $uri/ /index.html;
+                    error_page 405 =200 $uri;
+                }
+
+                location /api {
+                    proxy_pass http://127.0.0.1:5002;
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection 'upgrade';
+                    proxy_set_header Host $host;
+                    proxy_cache_bypass $http_upgrade;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                }
+
+                location /auth {
+                    proxy_pass http://127.0.0.1:5002/api/auth;
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection 'upgrade';
+                    proxy_set_header Host $host;
+                    proxy_cache_bypass $http_upgrade;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                }
+
+                location /uploads {
+                    proxy_pass http://127.0.0.1:5002;
+                    proxy_http_version 1.1;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                }
+            }
+            NGINX_HTTP_CONF
+              sudo ln -sf "$EXISTING_CONF" "/etc/nginx/sites-enabled/${{ env.DOMAIN_NAME }}"
+              sudo nginx -t && sudo systemctl reload nginx
+
+              echo "Requesting SSL certificate using Certbot for ${{ env.DOMAIN_NAME }}..."
+              sudo certbot certonly --nginx -d "${{ env.DOMAIN_NAME }}" --non-interactive --agree-tos -m techeinnovation.01@gmail.com || \
+              sudo certbot certonly --nginx -d "${{ env.DOMAIN_NAME }}" --non-interactive --agree-tos --register-unsafely-without-email || true
+            fi
+
+            # If SSL certificate exists, configure port 443 with SSL and HTTP -> HTTPS redirect
+            if [ -f "$SSL_CERT" ] && [ -f "$SSL_KEY" ]; then
+              echo "SSL certificate detected. Writing full HTTPS port 443 configuration..."
+              sudo tee "$EXISTING_CONF" > /dev/null << 'NGINX_SSL_CONF'
+            # Redirect all HTTP traffic to HTTPS
+            server {
+                listen 80;
+                listen [::]:80;
+                server_name spiritual.techeinnovation.com;
+
+                location /.well-known/acme-challenge/ {
+                    root /var/www/html;
+                }
+
+                location / {
+                    return 301 https://$host$request_uri;
+                }
+            }
+
+            # Serve Frontend and reverse proxy Backend over HTTPS
+            server {
+                listen 443 ssl http2;
+                listen [::]:443 ssl http2;
+                server_name spiritual.techeinnovation.com;
+
+                ssl_certificate /etc/letsencrypt/live/spiritual.techeinnovation.com/fullchain.pem;
+                ssl_certificate_key /etc/letsencrypt/live/spiritual.techeinnovation.com/privkey.pem;
+                ssl_protocols TLSv1.2 TLSv1.3;
+                ssl_ciphers HIGH:!aNULL:!MD5;
+                ssl_prefer_server_ciphers on;
+
+                client_max_body_size 20M;
+
+                # Frontend static files (built with Vite into dist/)
+                root ${{ env.DEPLOY_PATH }}/frontend;
+                index index.html index.htm;
+
+                # Single Page Application routing fallback
+                location / {
+                    try_files $uri $uri/ /index.html;
+                    error_page 405 =200 $uri;
+                }
+
+                # Reverse proxy for backend API running on port 5002
+                location /api {
+                    proxy_pass http://127.0.0.1:5002;
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection 'upgrade';
+                    proxy_set_header Host $host;
+                    proxy_cache_bypass $http_upgrade;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                }
+
+                # Proxy fallback for direct auth routes without /api
+                location /auth {
+                    proxy_pass http://127.0.0.1:5002/api/auth;
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection 'upgrade';
+                    proxy_set_header Host $host;
+                    proxy_cache_bypass $http_upgrade;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                }
+
+                # Reverse proxy for user-uploaded assets served by backend
+                location /uploads {
+                    proxy_pass http://127.0.0.1:5002;
+                    proxy_http_version 1.1;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                }
+
+                # Enable compression
+                gzip on;
+                gzip_vary on;
+                gzip_min_length 1024;
+                gzip_proxied expired no-cache no-store private auth;
+                gzip_types text/plain text/css text/xml text/javascript application/javascript application/x-javascript application/json application/xml image/svg+xml;
+            }
+            NGINX_SSL_CONF
+            fi
+
+            # Enable site by symlinking under /etc/nginx/sites-enabled/
+            sudo ln -sf "$EXISTING_CONF" "/etc/nginx/sites-enabled/${{ env.DOMAIN_NAME }}"
+
+            # Test Nginx syntax across all configurations before reloading to protect existing sites
+            sudo nginx -t
+
+            # Reload Nginx gracefully without downtime to existing sites
+            sudo systemctl reload nginx
+            sudo systemctl enable nginx
+
+      - name: Verify deployment health
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ env.EC2_SSH_KEY }}
+          script: |
+            set -e
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+            echo "======================================"
+            echo "1. Checking PM2 backend status..."
+            pm2 status spiritual-backend
+
+            echo ""
+            echo "======================================"
+            echo "2. Checking Nginx service status..."
+            sudo systemctl status nginx --no-pager
+
+            echo ""
+            echo "======================================"
+            echo "3. Testing Backend running on port 5002..."
+            curl -f http://127.0.0.1:5002/api/health || curl -f http://127.0.0.1:5002/
+
+            echo ""
+            echo "======================================"
+            echo "4. Testing Frontend serving via Nginx for spiritual.techeinnovation.com..."
+            if [ -f "/etc/letsencrypt/live/${{ env.DOMAIN_NAME }}/fullchain.pem" ]; then
+              echo "Testing HTTPS connection..."
+              curl -fk --resolve "${{ env.DOMAIN_NAME }}:443:127.0.0.1" "https://${{ env.DOMAIN_NAME }}/" | head -n 15
+            else
+              echo "Testing HTTP connection..."
+              curl -f -H "Host: ${{ env.DOMAIN_NAME }}" http://127.0.0.1/ | head -n 15
+            fi
+
+            echo ""
+            echo "Deployment completed and verified successfully!"

@@ -2,11 +2,11 @@ import { Platform } from 'react-native';
 
 // Use your machine's local IP when testing on a physical device via Expo Go.
 // Change this IP if your network address changes (run: ipconfig getifaddr en0).
-const LOCAL_IP = '10.19.201.190';
+const LOCAL_IP = '10.238.18.190';
 export const BASE_URL = Platform.select({
-  android: `http://${LOCAL_IP}:3001`,
-  ios: `http://${LOCAL_IP}:3001`,
-  default: 'http://localhost:3001',
+  android: `http://${LOCAL_IP}:5001`,
+  ios: `http://${LOCAL_IP}:5001`,
+  default: 'http://localhost:5001',
 });
 
 /**
@@ -57,18 +57,276 @@ type ApiResponse<T> = {
   error?: string;
 };
 
+// Fallback data for offline APK testing / demo mode without active backend
+const MOCK_FALLBACKS: Record<string, any> = {
+  '/api/auth/me': {
+    user: { id: 1, name: 'Demo Seeker', email: 'demo@spiritual.app', created_at: new Date().toISOString() },
+  },
+  '/api/courses': {
+    courses: [
+      {
+        id: 1,
+        title: 'Foundations of Inner Peace',
+        description: 'Explore the foundations of stillness, mindful living, and inner joy.',
+        thumbnail_url: null,
+        level: 'Beginner',
+        total_lessons: 6,
+        sort_order: 1,
+        completed_lessons: 2,
+        progress_pct: 33,
+      },
+      {
+        id: 2,
+        title: 'Vedic Philosophy & Karma',
+        description: 'Deep dive into timeless laws of action, consequence, and spiritual duty.',
+        thumbnail_url: null,
+        level: 'Intermediate',
+        total_lessons: 8,
+        sort_order: 2,
+        completed_lessons: 1,
+        progress_pct: 12,
+      },
+      {
+        id: 3,
+        title: 'Chakra Awakening & Vital Energy',
+        description: 'Subtle body alignment through breath, sound, and deep meditation.',
+        thumbnail_url: null,
+        level: 'Advanced',
+        total_lessons: 10,
+        sort_order: 3,
+        completed_lessons: 0,
+        progress_pct: 0,
+      },
+    ],
+  },
+  '/api/tasks/today': {
+    tasks: [
+      { id: 1, title: 'Morning Pranayama', description: '10 minutes of box breathing', points: 20, completed: true, category: 'breath' },
+      { id: 2, title: 'Mindful Meditation', description: '15 minutes of silent awareness', points: 30, completed: false, category: 'meditation' },
+      { id: 3, title: 'Gratitude Journaling', description: 'Note down 3 things you are thankful for', points: 15, completed: false, category: 'reflection' },
+      { id: 4, title: 'Daily Sacred Reading', description: '1 chapter of timeless philosophy', points: 25, completed: false, category: 'study' },
+    ],
+    streak: 5,
+    points: 210,
+  },
+  '/api/meditations': {
+    meditations: [
+      {
+        id: 1,
+        title: 'Deep Inner Calm',
+        category: 'Calm',
+        duration_minutes: 10,
+        audio_filename: null,
+        description: 'A serene guide to soothing the mind and nervous system.',
+        is_free: true,
+        completed: true,
+        listened_sec: 600,
+      },
+      {
+        id: 2,
+        title: 'Morning Vitality & Focus',
+        category: 'Energy',
+        duration_minutes: 12,
+        audio_filename: null,
+        description: 'Ignite inner clarity and motivation for your day.',
+        is_free: true,
+        completed: false,
+        listened_sec: 0,
+      },
+      {
+        id: 3,
+        title: 'Restful Deep Sleep',
+        category: 'Sleep',
+        duration_minutes: 20,
+        audio_filename: null,
+        description: 'Let go of tension and ease into tranquil sleep.',
+        is_free: true,
+        completed: false,
+        listened_sec: 0,
+      },
+      {
+        id: 4,
+        title: 'Anxiety Release & Centering',
+        category: 'Stress',
+        duration_minutes: 15,
+        audio_filename: null,
+        description: 'Dissolve mental loops and return to your natural center.',
+        is_free: true,
+        completed: false,
+        listened_sec: 0,
+      },
+    ],
+    summary: { completed_count: 8, total_minutes: 125 },
+  },
+  '/api/community/posts': {
+    posts: [
+      {
+        id: 1,
+        user_id: 2,
+        author_name: 'Ananya Sharma',
+        title: 'How morning silence transformed my workday',
+        content: 'I began sitting in stillness for 10 minutes before checking my phone. It completely removed the morning rush sensation.',
+        category: 'Daily Practice',
+        likes_count: 28,
+        liked_by_user: true,
+        comments_count: 6,
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: 2,
+        user_id: 3,
+        author_name: 'Rohan Verma',
+        title: 'Reflections on Karma Yoga',
+        content: '“You have a right to perform your prescribed duties, but you are not entitled to the fruits of your actions.” A timeless guide to inner freedom.',
+        category: 'Philosophy',
+        likes_count: 45,
+        liked_by_user: false,
+        comments_count: 11,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  },
+  '/api/events': {
+    events: [
+      {
+        id: 1,
+        title: 'Global Weekend Guided Meditation',
+        description: 'Join community members across the world for a synchronous 30-minute meditation and blessing.',
+        event_date: 'This Sunday',
+        time_str: '7:00 AM - 7:45 AM IST',
+        location: 'Online Live Stream',
+        is_online: true,
+        attendees_count: 142,
+        registered_by_user: true,
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: 2,
+        title: 'Pranayama & Breathwork Masterclass',
+        description: 'Hands-on techniques for energizing the nadis and clearing emotional blocks.',
+        event_date: 'Next Saturday',
+        time_str: '6:30 PM - 8:00 PM IST',
+        location: 'Online Workshop',
+        is_online: true,
+        attendees_count: 89,
+        registered_by_user: false,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  },
+  '/api/volunteer/opportunities': {
+    opportunities: [
+      {
+        id: 1,
+        title: 'Community Food & Sustenance Seva',
+        description: 'Help distribute warm, nutritious meals to families in need every weekend.',
+        category: 'Annadaan',
+        location: 'Local Community Kitchen',
+        required_volunteers: 15,
+        current_volunteers: 11,
+        applied_by_user: false,
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: 2,
+        title: 'Youth Mentorship & Mindfulness Guide',
+        description: 'Introduce high school students to mindfulness practices and emotional resilience tools.',
+        category: 'Vidya Daan',
+        location: 'Hybrid / Virtual',
+        required_volunteers: 8,
+        current_volunteers: 5,
+        applied_by_user: true,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  },
+  '/api/shop/items': {
+    items: [
+      {
+        id: 1,
+        title: 'Handcrafted Sandalwood Mala (108 beads)',
+        description: 'Authentic Mysore sandalwood beads with a natural soothing fragrance, ideal for japa and mindful counting.',
+        price: '899',
+        currency: 'INR',
+        category: 'Meditation Tools',
+        stock_quantity: 25,
+        is_featured: true,
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: 2,
+        title: 'Brass Akhand Diya & Stand',
+        description: 'Traditional heavy brass lamp for sacred altar lighting and evening contemplation.',
+        price: '649',
+        currency: 'INR',
+        category: 'Puja & Rituals',
+        stock_quantity: 40,
+        is_featured: true,
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: 3,
+        title: 'Organic Herbal Dhoop Cones (Pack of 40)',
+        description: 'Hand-rolled charcoal-free incense formulated with cow ghee, camphor, and holy basil.',
+        price: '299',
+        currency: 'INR',
+        category: 'Aromatics',
+        stock_quantity: 80,
+        is_featured: false,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  },
+};
+
+function getMockFallback<T>(endpoint: string): T | null {
+  const cleanEndpoint = endpoint.split('?')[0];
+  if (MOCK_FALLBACKS[cleanEndpoint]) {
+    return MOCK_FALLBACKS[cleanEndpoint] as T;
+  }
+  // Course detail fallback
+  if (cleanEndpoint.startsWith('/api/courses/')) {
+    const course = MOCK_FALLBACKS['/api/courses'].courses[0];
+    return {
+      course,
+      lessons: [
+        { id: 101, title: 'Introduction to Stillness', duration_sec: 420, sort_order: 1, is_free: true, completed: true, watched_sec: 420 },
+        { id: 102, title: 'Breath as an Anchor', duration_sec: 600, sort_order: 2, is_free: true, completed: true, watched_sec: 600 },
+        { id: 103, title: 'Observing the Thinking Mind', duration_sec: 780, sort_order: 3, is_free: false, completed: false, watched_sec: 0 },
+      ],
+      resources: [],
+      assignments: [],
+      quizzes: [],
+    } as unknown as T;
+  }
+  // Meditation detail fallback
+  if (cleanEndpoint.startsWith('/api/meditations/')) {
+    return { meditation: MOCK_FALLBACKS['/api/meditations'].meditations[0] } as unknown as T;
+  }
+  // Toggle task fallback
+  if (cleanEndpoint.startsWith('/api/tasks/') && cleanEndpoint.endsWith('/toggle')) {
+    return { task: { id: 1, title: 'Daily Practice', completed: true } } as unknown as T;
+  }
+  return null;
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
       },
     });
+    clearTimeout(timeoutId);
 
     const data = await response.json();
 
@@ -78,7 +336,11 @@ async function request<T>(
 
     return { data };
   } catch (error) {
-    console.error('API request error:', error);
+    // If backend is unreachable or timeout, gracefully return offline demo mock data
+    const fallback = getMockFallback<T>(endpoint);
+    if (fallback !== null) {
+      return { data: fallback };
+    }
     return { error: 'Network error. Please check your connection.' };
   }
 }

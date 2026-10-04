@@ -1,0 +1,40 @@
+.event-status-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
+}
+
+.event-status-badge-draft {
+  background-color: #efe6d6;
+  color: #7a6548;
+}
+
+.event-status-badge-published {
+  background-color: #e4efe4;
+  color: #3d6b45;
+}
+
+.event-status-badge-cancelled {
+  background-color: #f4e0de;
+  color: #9a3d38;
+}
+
+.event-status-badge-upcoming {
+  background-color: #e8efe4;
+  color: #3d6b45;
+}
+
+.event-status-badge-live {
+  background-color: #f4ead0;
+  color: #8a5a12;
+}
+
+.event-status-badge-completed {
+  background-color: #e7ece8;
+  color: #4a5648;
+}

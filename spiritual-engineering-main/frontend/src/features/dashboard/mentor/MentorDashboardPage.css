@@ -1,0 +1,172 @@
+.mentor-dashboard {
+    padding: var(--spacing-xl) var(--spacing-lg);
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+  
+  .mentor-dashboard-header {
+    margin-bottom: var(--spacing-xl);
+  }
+  
+  .mentor-dashboard-header h1 {
+    color: var(--color-primary-dark);
+    margin-bottom: var(--spacing-xs);
+  }
+  
+  .mentor-dashboard-header p {
+    color: var(--color-text-muted);
+  }
+  
+  .mentor-overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+  }
+  
+  .mentor-overview-card {
+    background-color: #fff;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: var(--spacing-lg);
+    text-align: center;
+  }
+  
+  .mentor-overview-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--color-primary-dark);
+  }
+  
+  .mentor-overview-label {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    margin-top: var(--spacing-xs);
+  }
+  
+  .mentor-section {
+    margin-bottom: var(--spacing-xl);
+  }
+  
+  .mentor-section h2 {
+    font-size: 1.2rem;
+    color: var(--color-primary-dark);
+    margin-bottom: var(--spacing-md);
+  }
+  
+  .mentor-users-list {
+    background-color: #fff;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  
+  .mentor-user-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 1px solid var(--color-border);
+  }
+  
+  .mentor-user-row:last-child {
+    border-bottom: none;
+  }
+  
+  .mentor-user-name {
+    font-weight: 600;
+    color: var(--color-text);
+  }
+  
+  .mentor-user-meta {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+  }
+  
+  .mentor-section-placeholder {
+    color: var(--color-text-muted);
+    font-style: italic;
+  }
+  .mentor-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-lg);
+    margin-top: var(--spacing-lg);
+  }
+  
+  .mentor-progress-row {
+    margin-bottom: var(--spacing-md);
+  }
+  
+  .mentor-progress-label-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    color: var(--color-text);
+    margin-bottom: 6px;
+  }
+  
+  .mentor-progress-track {
+    height: 8px;
+    background-color: #f0e9d8;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  
+  .mentor-progress-fill {
+    height: 100%;
+    background-color: var(--color-primary);
+    border-radius: 4px;
+  }
+  
+  .mentor-session-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+  
+  .mentor-session-row:last-child {
+    border-bottom: none;
+  }
+  
+  .mentor-session-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: var(--color-primary);
+    font-size: 0.7rem;
+    font-weight: 600;
+    min-width: 60px;
+  }
+  
+  .mentor-session-day strong {
+    font-size: 0.85rem;
+    color: var(--color-secondary);
+  }
+  
+  .mentor-session-info {
+    flex: 1;
+  }
+  
+  .mentor-quick-actions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-sm);
+    margin: var(--spacing-md) 0;
+  }
+  
+  .mentor-quick-action-tile {
+    background-color: #f7f1e6;
+    border-radius: 10px;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+  
+  .mentor-view-all-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-xs);
+  }

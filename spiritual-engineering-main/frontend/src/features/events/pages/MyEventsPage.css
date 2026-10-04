@@ -1,0 +1,23 @@
+.my-events-retry,
+.my-events-browse-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: var(--spacing-md);
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.my-events-retry {
+  border: 1px solid var(--color-border);
+  background-color: #fff;
+  color: var(--color-secondary);
+}
+
+.my-events-browse-link {
+  border: 1px solid var(--color-secondary);
+  background-color: var(--color-primary);
+  color: var(--color-secondary);
+}

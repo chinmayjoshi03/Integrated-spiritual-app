@@ -1,0 +1,50 @@
+.upload-form {
+    max-width: 600px;
+    background-color: #fffdf8;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    padding: var(--spacing-xl);
+  }
+  
+  .upload-field {
+    margin-bottom: var(--spacing-md);
+  }
+  
+  .upload-field label {
+    display: block;
+    font-weight: 500;
+    color: var(--color-text);
+    margin-bottom: var(--spacing-xs);
+  }
+  
+  .upload-field input,
+  .upload-field select,
+  .upload-field textarea {
+    width: 100%;
+    padding: 10px var(--spacing-sm);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.95rem;
+  }
+  
+  .upload-field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-md);
+  }
+
+  .upload-preview-card {
+    max-width: 600px;
+    margin-top: var(--spacing-xl);
+    background-color: #fffdf8;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    padding: var(--spacing-lg);
+  }
+  
+  .upload-preview-media {
+    width: 100%;
+    border-radius: 10px;
+    margin-top: var(--spacing-sm);
+  }

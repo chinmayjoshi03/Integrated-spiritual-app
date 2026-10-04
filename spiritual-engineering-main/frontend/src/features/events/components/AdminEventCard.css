@@ -1,0 +1,115 @@
+.admin-event-card {
+  overflow: hidden;
+  background-color: #fffdf8;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(74, 56, 39, 0.04);
+}
+
+.admin-event-card-cancelled {
+  opacity: 0.78;
+}
+
+.admin-event-card-banner {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+}
+
+.admin-event-card-banner-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 160px;
+  background-color: #f7f1e6;
+  color: var(--color-primary);
+}
+
+.admin-event-card-body {
+  padding: var(--spacing-lg);
+}
+
+.admin-event-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.admin-event-card-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+}
+
+.admin-event-card-title {
+  font-size: 1.25rem;
+  color: var(--color-secondary);
+  margin-bottom: var(--spacing-md);
+}
+
+.admin-event-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.admin-event-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-event-card-meta-row svg {
+  flex-shrink: 0;
+  color: var(--color-primary-dark);
+}
+
+.admin-event-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+}
+
+.admin-event-card-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background-color: #fff;
+  color: var(--color-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.admin-event-card-btn:hover:not(:disabled) {
+  background-color: #f7f1e6;
+}
+
+.admin-event-card-btn-primary {
+  background-color: var(--color-primary);
+  border-color: var(--color-secondary);
+}
+
+.admin-event-card-btn-primary:hover:not(:disabled) {
+  background-color: var(--color-primary-dark);
+}
+
+.admin-event-card-btn-danger {
+  color: var(--color-error);
+  border-color: #e4c4c1;
+}
+
+.admin-event-card-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}

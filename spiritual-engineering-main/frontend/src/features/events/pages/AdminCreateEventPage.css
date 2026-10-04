@@ -1,0 +1,40 @@
+.admin-create-event-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--spacing-md);
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.admin-create-event-back:hover {
+  color: var(--color-secondary);
+}
+
+.admin-create-event-kicker {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-primary-dark);
+  margin-bottom: var(--spacing-xs);
+}
+
+.admin-create-event-title {
+  font-size: 2rem;
+  color: var(--color-secondary);
+}
+
+.admin-create-event-description {
+  max-width: 36rem;
+  margin: var(--spacing-sm) 0 var(--spacing-xl);
+  color: var(--color-text-muted);
+}
+
+.admin-create-event-status {
+  color: var(--color-text-muted);
+}
+
+.admin-create-event-error {
+  color: var(--color-error);
+}

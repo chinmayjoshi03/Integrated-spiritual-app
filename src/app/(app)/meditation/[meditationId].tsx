@@ -1,4 +1,4 @@
-import { Audio } from 'expo-av';
+import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -45,13 +45,16 @@ export default function MeditationPlayerScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Audio State
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [positionSec, setPositionSec] = useState(0);
-  const [durationSec, setDurationSec] = useState(0);
+  // Audio state
+  const [audioUrl, setAudioUrl] = useState<string>('');
+  const player = useAudioPlayer(audioUrl ? { uri: audioUrl } : null);
+  const status = useAudioPlayerStatus(player);
   const [isCompleted, setIsCompleted] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
+
+  const isPlaying = status.playing ?? false;
+  const positionSec = Math.floor((status.currentTime ?? 0));
+  const durationSec = Math.floor((status.duration ?? meditation?.duration_sec ?? 0));
 
   // Pulse animation for breathing circle
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -95,8 +98,6 @@ export default function MeditationPlayerScreen() {
       setError(res.error || 'Failed to load meditation.');
     } else {
       setMeditation(res.data.meditation);
-      setDurationSec(res.data.meditation.duration_sec);
-      setPositionSec(res.data.meditation.listened_sec);
       setIsCompleted(res.data.meditation.completed);
     }
     setLoading(false);
@@ -106,75 +107,40 @@ export default function MeditationPlayerScreen() {
     loadDetail();
   }, [loadDetail]);
 
-  // Sound setup & teardown
+  // Set audio mode & load URL when meditation is ready
   useEffect(() => {
-    let isMounted = true;
+    if (!meditation || !session) return;
 
-    async function initSound() {
-      if (!meditation || !session) return;
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+      interruptionMode: 'duckOthers',
+    }).catch(console.error);
 
-      try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          shouldDuckAndroid: true,
-        });
-
-        const audioUrl = getAudioUrl(meditation.audio_filename, session);
-        if (!audioUrl) return;
-
-        const { sound: newSound } = await Audio.Sound.createAsync(
-          { uri: audioUrl },
-          { shouldPlay: true, positionMillis: meditation.listened_sec * 1000 },
-          onPlaybackStatusUpdate
-        );
-
-        if (isMounted) {
-          soundRef.current = newSound;
-          setIsPlaying(true);
-        } else {
-          await newSound.unloadAsync();
-        }
-      } catch (err) {
-        console.error('Audio initialization error:', err);
-      }
-    }
-
-    if (meditation) {
-      initSound();
-    }
-
-    return () => {
-      isMounted = false;
-      if (soundRef.current) {
-        soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-    };
+    const url = getAudioUrl(meditation.audio_filename, session);
+    if (url) setAudioUrl(url);
   }, [meditation, session]);
 
-  // Playback Status Callback
-  const onPlaybackStatusUpdate = (status: any) => {
-    if (!status.isLoaded) return;
+  // Auto-play once player is ready
+  useEffect(() => {
+    if (audioUrl && player && status.isLoaded) {
+      player.seekTo(meditation?.listened_sec ?? 0);
+      player.play();
+    }
+  }, [audioUrl, status.isLoaded]);
 
-    setIsPlaying(status.isPlaying);
-
-    const posSeconds = Math.floor(status.positionMillis / 1000);
-    const durSeconds = Math.floor((status.durationMillis || 0) / 1000);
-
-    setPositionSec(posSeconds);
-    if (durSeconds > 0) setDurationSec(durSeconds);
-
-    // Audio finished
-    if (status.didJustFinish) {
-      setIsPlaying(false);
+  // Track completion
+  useEffect(() => {
+    if (status.didJustFinish && !isCompleted) {
       setIsCompleted(true);
       setShowCompleteModal(true);
       if (session && meditation) {
-        apiSaveMeditationProgress(session, meditation.id, durSeconds || posSeconds, true);
+        apiSaveMeditationProgress(session, meditation.id, durationSec || positionSec, true);
       }
     }
-  };
+  }, [status.didJustFinish]);
+
+
 
   // Save progress periodically (every 5s)
   useEffect(() => {
@@ -188,19 +154,19 @@ export default function MeditationPlayerScreen() {
   }, [isPlaying, session, meditation, positionSec]);
 
   // Controls
-  const togglePlayPause = async () => {
-    if (!soundRef.current) return;
+  const togglePlayPause = () => {
+    if (!player) return;
     if (isPlaying) {
-      await soundRef.current.pauseAsync();
+      player.pause();
     } else {
-      await soundRef.current.playAsync();
+      player.play();
     }
   };
 
-  const seekRelative = async (offsetSeconds: number) => {
-    if (!soundRef.current) return;
-    const targetMillis = Math.max(0, (positionSec + offsetSeconds) * 1000);
-    await soundRef.current.setPositionAsync(targetMillis);
+  const seekRelative = (offsetSeconds: number) => {
+    if (!player) return;
+    const target = Math.max(0, positionSec + offsetSeconds);
+    player.seekTo(target);
   };
 
   const theme = meditation ? THEMES[meditation.category] || THEMES.Guided : THEMES.Guided;

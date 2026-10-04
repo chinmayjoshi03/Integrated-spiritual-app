@@ -1,0 +1,62 @@
+.brand-logo {
+    position: absolute;
+    top: 66px;
+    left: 58px;
+    width: 182px;
+    height: auto;
+    z-index: 2;
+  }
+  
+  .auth-visual {
+    position: relative;
+    flex: 0 0 45%;
+    background: linear-gradient(to left, #f2e7d2, #e7d5b5);
+    padding: var(--spacing-xl) 84px;
+    overflow: hidden;
+  }
+  
+  .auth-visual-headline {
+    font-family: var(--font-family-heading);
+    font-weight: 600;
+    font-size: 3.5rem;
+    color: var(--color-secondary);
+    line-height: 1.15;
+    margin-top: 220px;
+  }
+  
+  .auth-visual-divider {
+    width: 155px;
+    height: 3px;
+    background-color: var(--color-primary);
+    margin: var(--spacing-lg) 0;
+  }
+  
+  .auth-visual-subtext {
+    font-size: 1.25rem;
+    color: #5c4a38;
+    max-width: 400px;
+  }
+  
+  .auth-visual-ornament {
+    position: absolute;
+    bottom: 0;
+    left: 84px;
+    width: 380px;
+    pointer-events: none;
+  }
+  
+  .auth-visual-dot {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: var(--color-primary);
+  }
+  
+  .auth-visual-ring {
+    position: absolute;
+    width: 82px;
+    height: 82px;
+    border-radius: 50%;
+    border: 2px solid var(--color-primary);
+  }

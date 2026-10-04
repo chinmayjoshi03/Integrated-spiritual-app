@@ -1,0 +1,46 @@
+.profile-header-card {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-lg);
+    background-color: #fffdf8;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    padding: var(--spacing-xl);
+  }
+  
+  .profile-avatar-large {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background-color: var(--color-primary);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  
+  .profile-name {
+    font-family: var(--font-family-heading);
+    font-size: 1.4rem;
+    color: var(--color-secondary);
+  }
+  
+  .profile-email {
+    color: var(--color-text-muted);
+    font-size: 0.95rem;
+    margin: 4px 0 var(--spacing-sm);
+  }
+  
+  .profile-role-badge {
+    display: inline-block;
+    background-color: rgba(201, 154, 36, 0.15);
+    color: var(--color-primary);
+    padding: 4px var(--spacing-sm);
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: capitalize;
+  }

@@ -1,0 +1,13 @@
+.coming-soon-box {
+    background-color: #fffdf8;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    padding: var(--spacing-xl);
+    text-align: center;
+    color: var(--color-text-muted);
+    max-width: 400px;
+  }
+  
+  .coming-soon-box svg {
+    margin-bottom: var(--spacing-md);
+  }

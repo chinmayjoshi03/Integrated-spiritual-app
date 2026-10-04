@@ -1,0 +1,27 @@
+.product-detail-card {
+    display: flex;
+    gap: var(--spacing-xl);
+    max-width: 800px;
+  }
+  
+  .product-detail-image {
+    width: 320px;
+    height: 280px;
+    max-width: 320px;
+    max-height: 280px;
+    object-fit: cover;
+    border-radius: 14px;
+    flex-shrink: 0;
+    display: block;
+  }
+  
+  .product-detail-info {
+    flex: 1;
+  }
+  
+  .product-detail-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-md);
+  }

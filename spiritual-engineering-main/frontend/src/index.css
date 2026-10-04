@@ -1,0 +1,59 @@
+:root {
+  /* Color palette — warm gold/cream, from Figma */
+  --color-primary: #c99a24;
+  --color-primary-dark: #a67f1c;
+  --color-secondary: #4a3827;
+  --color-background: #fffdf9;
+  --color-text: #3f3328;
+  --color-text-muted: #6b5a48;
+  --color-border: #d8d1c4;
+  --color-error: #b3413d;
+
+  /* Spacing scale */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 40px;
+
+  /* Typography */
+  --font-family-base: 'Inter', system-ui, sans-serif;
+  --font-family-heading: 'Playfair Display', serif;
+  --font-size-base: 16px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  background-color: var(--color-background);
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-family-heading);
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl);
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+}

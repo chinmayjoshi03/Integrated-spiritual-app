@@ -1,0 +1,71 @@
+.event-registration-panel {
+  padding: var(--spacing-lg);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background-color: #fff;
+}
+
+.event-registration-title {
+  margin-bottom: var(--spacing-md);
+  color: var(--color-secondary);
+  font-size: 1.35rem;
+}
+
+.event-registration-copy {
+  margin-bottom: var(--spacing-md);
+  color: var(--color-text-muted);
+}
+
+.event-registration-success {
+  margin-bottom: var(--spacing-md);
+  color: #3d6b45;
+}
+
+.event-registration-error {
+  margin-bottom: var(--spacing-md);
+  color: var(--color-error);
+}
+
+.event-registration-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-secondary);
+  border-radius: 10px;
+  background-color: var(--color-primary);
+  color: var(--color-secondary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.event-registration-button:hover:not(:disabled) {
+  background-color: var(--color-primary-dark);
+}
+
+.event-registration-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.event-registration-button-secondary {
+  margin-top: var(--spacing-sm);
+  background-color: #fff;
+}
+
+.event-registration-button-secondary:hover:not(:disabled) {
+  background-color: #f7f1e6;
+}
+
+.event-registration-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--color-text-muted);
+}
+
+.event-registration-summary strong {
+  color: var(--color-secondary);
+}

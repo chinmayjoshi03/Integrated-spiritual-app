@@ -1,0 +1,94 @@
+.med-category-tabs {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-lg);
+    flex-wrap: wrap;
+  }
+  
+  .med-tab {
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: 20px;
+    padding: 8px var(--spacing-md);
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+  }
+  
+  .med-tab-active {
+    background-color: var(--color-primary);
+    color: #fff;
+    border-color: var(--color-primary);
+  }
+  
+  .med-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--spacing-lg);
+  }
+  
+  .med-card {
+    background-color: #fffdf8;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    padding: var(--spacing-lg);
+    display: block;
+    color: inherit;
+  }
+  
+  .med-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  }
+  
+  .med-card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: rgba(201, 154, 36, 0.15);
+    color: var(--color-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: var(--spacing-sm);
+  }
+  
+  .med-card-title {
+    font-family: var(--font-family-heading);
+    font-size: 1.1rem;
+    color: var(--color-secondary);
+    margin-bottom: 4px;
+  }
+  
+  .med-card-meta {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+  }
+  .med-filter-section {
+    margin-bottom: var(--spacing-lg);
+  }
+  
+  .med-filter-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-text-muted);
+    margin-bottom: var(--spacing-xs);
+  }
+  
+  .med-card-course-tag {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    background-color: rgba(201, 154, 36, 0.12);
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: var(--spacing-xs);
+  }
+  
+  .med-card-locked-tag {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+    font-style: italic;
+  }

@@ -1,0 +1,67 @@
+.admin-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+  background-color: rgba(63, 51, 40, 0.45);
+}
+
+.admin-confirm-dialog {
+  width: 100%;
+  max-width: 440px;
+  padding: var(--spacing-xl);
+  background-color: #fffdf8;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+}
+
+.admin-confirm-title {
+  font-size: 1.4rem;
+  color: var(--color-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.admin-confirm-message {
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-lg);
+}
+
+.admin-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-md);
+}
+
+.admin-confirm-cancel,
+.admin-confirm-submit {
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.admin-confirm-cancel {
+  background: none;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.admin-confirm-submit {
+  background-color: var(--color-primary);
+  border: 1px solid var(--color-secondary);
+  color: var(--color-secondary);
+}
+
+.admin-confirm-submit-danger {
+  background-color: #f4e0de;
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.admin-confirm-submit:disabled,
+.admin-confirm-cancel:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}

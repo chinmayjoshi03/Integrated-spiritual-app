@@ -8,10 +8,12 @@ const router = express.Router();
 
 /**
  * Generate JWT token for a user
+ * Uses both `id` and `userId` in payload for compatibility with local routes
+ * and the new controller-based routes from the main repo.
  */
 function generateToken(user) {
   return jwt.sign(
-    { id: user.id, email: user.email },
+    { id: user.id, userId: user.id, email: user.email, role: user.role || 'user' },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
@@ -25,7 +27,6 @@ router.post('/signup', async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Validate input
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
@@ -48,9 +49,11 @@ router.post('/signup', async (req, res) => {
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Insert user
+    // Insert user — column is password_hash in the DB
     const result = await db.query(
-      'INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id, name, email, created_at',
+      `INSERT INTO users (name, email, password_hash, is_verified)
+       VALUES ($1, $2, $3, true)
+       RETURNING id, name, email, role, created_at`,
       [name || null, email.toLowerCase(), hashedPassword]
     );
 
@@ -81,14 +84,13 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validate input
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
 
-    // Find user
+    // Fetch user — column is password_hash in the DB
     const result = await db.query(
-      'SELECT id, name, email, password, created_at FROM users WHERE email = $1',
+      'SELECT id, name, email, password_hash, role, is_verified, created_at FROM users WHERE email = $1',
       [email.toLowerCase()]
     );
 
@@ -98,8 +100,8 @@ router.post('/login', async (req, res) => {
 
     const user = result.rows[0];
 
-    // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.password);
+    // Verify password against password_hash column
+    const isValidPassword = await bcrypt.compare(password, user.password_hash);
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
@@ -129,8 +131,8 @@ router.post('/login', async (req, res) => {
 router.get('/me', authenticate, async (req, res) => {
   try {
     const result = await db.query(
-      'SELECT id, name, email, created_at FROM users WHERE id = $1',
-      [req.user.id]
+      'SELECT id, name, email, role, created_at FROM users WHERE id = $1',
+      [req.user.id || req.user.userId]
     );
 
     if (result.rows.length === 0) {

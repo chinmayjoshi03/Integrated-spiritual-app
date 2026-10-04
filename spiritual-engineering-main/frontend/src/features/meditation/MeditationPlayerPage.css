@@ -1,0 +1,32 @@
+.med-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: var(--spacing-lg);
+  }
+  
+  .med-player-card {
+    background-color: #fffdf8;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    padding: var(--spacing-lg);
+    max-width: 700px;
+  }
+  
+  .med-player-media {
+    width: 100%;
+    border-radius: 10px;
+    margin-bottom: var(--spacing-md);
+  }
+  
+  .med-player-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .med-bookmark-btn {
+    background: none;
+    border: none;
+    color: var(--color-primary);
+  }
