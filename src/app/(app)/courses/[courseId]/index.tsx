@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -12,9 +13,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader, Card, Pill, SectionTitle, ui } from '@/components/karma-ui';
+import RazorpayCheckoutSheet from '@/components/RazorpayCheckoutSheet';
 import { Palette, Spacing } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
-import { type CourseDetail, apiGetCourseDetail } from '@/services/api';
+import {
+  type CourseDetail,
+  type VerifiedPayment,
+  apiCreateCoursePaymentOrder,
+  apiEnrollCourse,
+  apiGetCourseDetail,
+} from '@/services/api';
 
 type TabKey = 'lessons' | 'resources' | 'assignments' | 'quiz';
 
@@ -32,6 +40,23 @@ export default function CourseDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('lessons');
+  const [enrolled, setEnrolled] = useState(false);
+  const [enrolling, setEnrolling] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+
+  const checkEnrollment = useCallback(async () => {
+    if (!session || !courseId) return;
+    try {
+      const res = await fetch(
+        `${BASE_URL}/api/enrollments/${courseId}/enrollment-status`,
+        { headers: { Authorization: `Bearer ${session}` } }
+      );
+      const data = await res.json();
+      if (data.enrolled) setEnrolled(true);
+    } catch {
+      // silent — not enrolled or network error
+    }
+  }, [session, courseId]);
 
   const load = useCallback(
     async (silent = false) => {
@@ -46,7 +71,44 @@ export default function CourseDetailScreen() {
     [session, courseId]
   );
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    checkEnrollment();
+  }, [load, checkEnrollment]);
+
+  const handleEnroll = async () => {
+    if (!session || !courseId) return;
+
+    const price = Number(detail?.course.price ?? 0);
+
+    // Free course — use the direct enrollment endpoint
+    if (price === 0) {
+      setEnrolling(true);
+      const res = await apiEnrollCourse(session, Number(courseId));
+      setEnrolling(false);
+      if (res.error) {
+        if (res.error.toLowerCase().includes('already enrolled')) {
+          setEnrolled(true);
+        } else {
+          Alert.alert('Could not enroll', res.error);
+        }
+      } else {
+        setEnrolled(true);
+        Alert.alert('Enrolled!', 'You are now enrolled. Happy learning!', [{ text: 'Start learning' }]);
+        load(true);
+      }
+      return;
+    }
+
+    // Paid course — open the checkout sheet
+    setCheckoutOpen(true);
+  };
+
+  const handlePaymentComplete = async (_verified: VerifiedPayment) => {
+    setEnrolled(true);
+    Alert.alert('Enrolled! 🙏', 'Your payment was successful. Happy learning!', [{ text: 'Start learning' }]);
+    load(true);
+  };
 
   if (loading) {
     return (
@@ -68,7 +130,7 @@ export default function CourseDetailScreen() {
   }
 
   const { course, lessons, resources, assignments, quizzes } = detail;
-  const lvlColor = LEVEL_COLORS[course.level] ?? { bg: Palette.goldSoft, text: Palette.goldDark };
+  const lvlColor = LEVEL_COLORS[course.level ?? ''] ?? { bg: Palette.goldSoft, text: Palette.goldDark };
 
   const tabs: { key: TabKey; label: string; count: number; emoji: string }[] = [
     { key: 'lessons',     label: 'Lessons',     count: lessons.length,     emoji: '▶' },
@@ -99,30 +161,79 @@ export default function CourseDetailScreen() {
           {/* Hero */}
           <View style={styles.heroContent}>
             <View style={[styles.levelBadge, { backgroundColor: lvlColor.bg }]}>
-              <Text style={[styles.levelText, { color: lvlColor.text }]}>{course.level}</Text>
+              <Text style={[styles.levelText, { color: lvlColor.text }]}>{course.level ?? 'Course'}</Text>
             </View>
             <Text style={styles.heroTitle}>{course.title}</Text>
             {course.description ? (
               <Text style={styles.heroDesc} numberOfLines={3}>{course.description}</Text>
             ) : null}
             <Text style={styles.heroMeta}>
-              {course.total_lessons} lessons · {course.completed_lessons} completed
+              {course.total_lessons ? `${course.total_lessons} lessons · ` : ''}{course.completed_lessons ?? 0} completed
             </Text>
           </View>
 
           {/* Progress ring row */}
-          {course.progress_pct > 0 && (
+          {(course.progress_pct ?? 0) > 0 && (
             <View style={styles.progressBlock}>
               <View style={styles.progressLabelRow}>
                 <Text style={styles.progressLabel}>Your progress</Text>
-                <Text style={styles.progressPct}>{course.progress_pct}%</Text>
+                <Text style={styles.progressPct}>{course.progress_pct ?? 0}%</Text>
               </View>
               <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${course.progress_pct}%` }]} />
+                <View style={[styles.progressFill, { width: `${course.progress_pct ?? 0}%` }]} />
               </View>
             </View>
           )}
         </View>
+
+        {/* Enroll CTA — shown when not enrolled and course has a price */}
+        {!enrolled && Number(course.price) > 0 && (
+          <View style={styles.enrollBanner}>
+            <View style={styles.enrollBannerLeft}>
+              <Text style={styles.enrollBannerEyebrow}>NOT ENROLLED</Text>
+              <Text style={styles.enrollBannerTitle}>
+                ₹{Number(course.price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+              </Text>
+              <Text style={styles.enrollBannerSub}>
+                Enroll to unlock all lessons, resources and assignments.
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.enrollBtn, enrolling && { opacity: 0.6 }]}
+              onPress={handleEnroll}
+              disabled={enrolling}
+            >
+              {enrolling ? (
+                <ActivityIndicator color={Palette.surface} size="small" />
+              ) : (
+                <Text style={styles.enrollBtnText}>Enroll Now</Text>
+              )}
+            </Pressable>
+          </View>
+        )}
+
+        {!enrolled && Number(course.price) === 0 && (
+          <View style={styles.freeEnrollBanner}>
+            <Text style={styles.freeEnrollText}>This course is free</Text>
+            <Pressable
+              style={[styles.enrollBtn, enrolling && { opacity: 0.6 }]}
+              onPress={handleEnroll}
+              disabled={enrolling}
+            >
+              {enrolling ? (
+                <ActivityIndicator color={Palette.surface} size="small" />
+              ) : (
+                <Text style={styles.enrollBtnText}>Enroll Free</Text>
+              )}
+            </Pressable>
+          </View>
+        )}
+
+        {enrolled && (
+          <View style={styles.enrolledBanner}>
+            <Text style={styles.enrolledBannerText}>✓ You are enrolled in this course</Text>
+          </View>
+        )}
 
         {/* Body card — sits below the dark hero */}
         <View style={styles.body}>
@@ -303,6 +414,24 @@ export default function CourseDetailScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* ── Razorpay checkout sheet ── */}
+      {detail && (
+        <RazorpayCheckoutSheet
+          visible={checkoutOpen}
+          amount={Number(detail.course.price ?? 0)}
+          merchantName="The Karma Vajra"
+          purpose="Course enrollment"
+          details={[
+            { label: 'Course',     value: detail.course.title },
+            { label: 'Instructor', value: detail.course.mentor_name ?? 'To be announced' },
+          ]}
+          createOrder={() => apiCreateCoursePaymentOrder(session!, Number(courseId))}
+          onPaymentComplete={handlePaymentComplete}
+          token={session}
+          onClose={() => setCheckoutOpen(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -537,4 +666,55 @@ const styles = StyleSheet.create({
   notAttempted: { color: Palette.stoneLight, fontSize: 12, marginTop: 2 },
 
   arrow: { color: Palette.goldDark, fontSize: 28 },
+
+  // ── Enroll CTA ──
+  enrollBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Palette.charcoal,
+    marginHorizontal: Spacing.three,
+    marginTop: 16,
+    marginBottom: 4,
+    borderRadius: 20,
+    padding: 18,
+    gap: 12,
+  },
+  enrollBannerLeft: { flex: 1, gap: 4 },
+  enrollBannerEyebrow: { color: Palette.stoneLight, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  enrollBannerTitle: { color: Palette.gold, fontFamily: 'serif', fontSize: 26, fontWeight: '800' },
+  enrollBannerSub: { color: 'rgba(255,255,255,0.6)', fontSize: 12, lineHeight: 16 },
+  enrollBtn: {
+    backgroundColor: Palette.gold,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 100,
+  },
+  enrollBtnText: { color: Palette.charcoal, fontSize: 14, fontWeight: '800' },
+  freeEnrollBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#D1FAE5',
+    marginHorizontal: Spacing.three,
+    marginTop: 16,
+    marginBottom: 4,
+    borderRadius: 20,
+    padding: 18,
+  },
+  freeEnrollText: { color: '#065F46', fontSize: 15, fontWeight: '700', flex: 1 },
+  enrolledBanner: {
+    backgroundColor: '#D1FAE5',
+    marginHorizontal: Spacing.three,
+    marginTop: 16,
+    marginBottom: 4,
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+  },
+  enrolledBannerText: { color: '#065F46', fontSize: 14, fontWeight: '700' },
 });

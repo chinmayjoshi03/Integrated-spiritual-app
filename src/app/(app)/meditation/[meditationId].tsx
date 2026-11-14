@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -6,6 +7,7 @@ import {
   Animated,
   Easing,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -14,12 +16,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon, Card } from '@/components/karma-ui';
+import RazorpayCheckoutSheet from '@/components/RazorpayCheckoutSheet';
 import { Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import {
   type Meditation,
+  apiCreateCoursePaymentOrder,
   apiGetMeditationDetail,
   apiSaveMeditationProgress,
+  apiToggleMeditationBookmark,
   getAudioUrl,
 } from '@/services/api';
 
@@ -51,6 +56,8 @@ export default function MeditationPlayerScreen() {
   const status = useAudioPlayerStatus(player);
   const [isCompleted, setIsCompleted] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   const isPlaying = status.playing ?? false;
   const positionSec = Math.floor((status.currentTime ?? 0));
@@ -99,6 +106,9 @@ export default function MeditationPlayerScreen() {
     } else {
       setMeditation(res.data.meditation);
       setIsCompleted(res.data.meditation.completed);
+      // Load bookmark state
+      apiToggleMeditationBookmark(session, Number(meditationId))
+        .catch(() => undefined);
     }
     setLoading(false);
   }, [session, meditationId]);
@@ -194,6 +204,72 @@ export default function MeditationPlayerScreen() {
 
   const progressPct = durationSec > 0 ? (positionSec / durationSec) * 100 : 0;
 
+  // ── Enrollment wall — matches website's /dashboard/meditation/:id locked state ──
+  if (meditation.locked) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: Palette.ivory }]}>
+        {/* Header */}
+        <View style={styles.wallHeader}>
+          <Pressable onPress={() => router.back()} style={styles.wallBack}>
+            <Ionicons name="arrow-back" size={22} color={Palette.charcoal} />
+            <Text style={styles.wallBackText}>Back</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.wallContent}>
+          <Text style={styles.wallTitle}>{meditation.title}</Text>
+          <Text style={styles.wallSubtitle}>Meditation</Text>
+
+          {/* Enrollment card */}
+          <View style={styles.wallCard}>
+            <Text style={styles.wallEyebrow}>COURSE ENROLLMENT REQUIRED</Text>
+            <Text style={styles.wallHeading}>Pay to access this meditation</Text>
+            <Text style={styles.wallBody}>
+              This meditation is included with{' '}
+              <Text style={styles.wallBold}>{meditation.course_title ?? 'a course'}</Text>.
+              {' '}Enroll in the course to unlock the audio and video.
+            </Text>
+
+            {meditation.course_id && (
+              <Pressable
+                style={styles.wallCta}
+                onPress={() => setCheckoutOpen(true)}
+              >
+                <Text style={styles.wallCtaText}>
+                  View course{meditation.course_price && Number(meditation.course_price) > 0
+                    ? ` and pay ₹${Number(meditation.course_price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+                    : ''}
+                   →
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        </View>
+
+        {/* Checkout sheet */}
+        {meditation.course_id && (
+          <RazorpayCheckoutSheet
+            visible={checkoutOpen}
+            amount={Number(meditation.course_price ?? 0)}
+            merchantName="The Karma Vajra"
+            purpose="Course enrollment"
+            details={[
+              { label: 'Course', value: meditation.course_title ?? 'Course' },
+            ]}
+            createOrder={() => apiCreateCoursePaymentOrder(session!, meditation.course_id!)}
+            onPaymentComplete={async () => {
+              setCheckoutOpen(false);
+              // Reload the meditation — it will now be unlocked
+              loadDetail();
+            }}
+            token={session}
+            onClose={() => setCheckoutOpen(false)}
+          />
+        )}
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
       {/* ── Top Bar ── */}
@@ -206,7 +282,16 @@ export default function MeditationPlayerScreen() {
           <Text style={[styles.tagText, { color: theme.accent }]}>{meditation.category.toUpperCase()}</Text>
         </View>
 
-        <View style={{ width: 40 }} />
+        <Pressable
+          style={styles.iconBtn}
+          onPress={async () => {
+            if (!session) return;
+            const res = await apiToggleMeditationBookmark(session, meditation.id);
+            if (res.data) setIsBookmarked(res.data.bookmarked);
+          }}
+        >
+          <Text style={{ fontSize: 22 }}>{isBookmarked ? '🔖' : '🔖'}</Text>
+        </Pressable>
       </View>
 
       {/* ── Breathing Pulse Circle Visualizer ── */}
@@ -324,9 +409,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    ...Platform.select({
+      web: { boxShadow: '0px 4px 10px rgba(0,0,0,0.3)' },
+      default: { shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+    }),
   },
   centerIcon: { fontSize: 44 },
 
@@ -391,4 +477,40 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 16 },
   backBtn: { borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 16 },
   backBtnText: { fontWeight: '700' },
+
+  // Enrollment wall
+  wallHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Palette.line,
+  },
+  wallBack: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  wallBackText: { color: Palette.charcoal, fontSize: 15, fontWeight: '600' },
+  wallContent: { padding: 24, gap: 6 },
+  wallTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 26, fontWeight: '700', lineHeight: 32 },
+  wallSubtitle: { color: Palette.stone, fontSize: 14, marginBottom: 24 },
+  wallCard: {
+    backgroundColor: Palette.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Palette.line,
+    padding: 22,
+    gap: 12,
+  },
+  wallEyebrow: { color: Palette.goldDark, fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
+  wallHeading: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 20, fontWeight: '700', lineHeight: 26 },
+  wallBody: { color: Palette.stone, fontSize: 14, lineHeight: 21 },
+  wallBold: { color: Palette.charcoal, fontWeight: '700' },
+  wallCta: {
+    backgroundColor: Palette.goldDark,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  wallCtaText: { color: Palette.surface, fontSize: 15, fontWeight: '700' },
 });

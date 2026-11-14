@@ -7,7 +7,7 @@ import { ActionButton, Field } from '@/components/karma-ui';
 import { useSession } from '@/context/auth-context';
 
 export default function SignIn() {
-  const { signIn, signInAsGuest } = useSession();
+  const { signIn } = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -22,13 +22,11 @@ export default function SignIn() {
     setLoading(true);
     const result = await signIn(email.trim(), password);
     setLoading(false);
-    if (result) setError(result);
-    else router.replace('/');
-  };
-
-  const handleGuestDemo = () => {
-    signInAsGuest();
-    router.replace('/');
+    if (result) {
+      setError(result);
+    } else {
+      router.replace('/');
+    }
   };
 
   return (
@@ -38,7 +36,7 @@ export default function SignIn() {
         
         <Field
           label="Email address"
-          placeholder="you@example.com"
+          placeholder="user@spiritual.com"
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
@@ -68,18 +66,6 @@ export default function SignIn() {
 
         <ActionButton label={loading ? 'Signing in…' : 'Sign in'} onPress={submit} disabled={loading} />
         {loading ? <ActivityIndicator style={{ marginVertical: 8 }} /> : null}
-
-        <View style={authStyles.divider}>
-          <View style={authStyles.line} />
-          <Text style={authStyles.dividerText}>DEMO & GUEST MODE</Text>
-          <View style={authStyles.line} />
-        </View>
-
-        <ActionButton
-          variant="outline"
-          label="⚡ Quick Demo Access (Bypass Login)"
-          onPress={handleGuestDemo}
-        />
 
         <View style={authStyles.divider}>
           <View style={authStyles.line} />

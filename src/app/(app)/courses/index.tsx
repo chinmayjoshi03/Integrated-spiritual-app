@@ -15,20 +15,19 @@ import { Palette, Spacing } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import { type Course, apiGetCourses } from '@/services/api';
 
-type FilterKey = 'all' | 'inProgress' | 'completed';
+type FilterKey = 'all' | 'enrolled' | 'available';
 
 const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'inProgress', label: 'In Progress' },
-  { key: 'completed', label: 'Completed' },
+  { key: 'all',       label: 'All' },
+  { key: 'enrolled',  label: 'Enrolled' },
+  { key: 'available', label: 'Available' },
 ];
 
-const LEVEL_GRADIENT: Record<string, { bg: string; accent: string; text: string }> = {
-  Beginner:     { bg: '#E8F5E9', accent: '#4CAF50', text: '#1B5E20' },
-  Intermediate: { bg: '#FFF8E1', accent: '#FFC107', text: '#7B5500' },
-  Advanced:     { bg: '#FCE4EC', accent: '#E91E63', text: '#7B0020' },
-};
-const LEVEL_DEFAULT = { bg: Palette.goldSoft, accent: Palette.gold, text: Palette.goldDark };
+function formatPrice(price: number | string): string {
+  const n = Number(price);
+  if (!n || n === 0) return 'Free';
+  return `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+}
 
 export default function CoursesScreen() {
   const { session } = useSession();
@@ -39,6 +38,7 @@ export default function CoursesScreen() {
 
   useEffect(() => {
     if (!session) return;
+    setLoading(true);
     apiGetCourses(session).then((res) => {
       if (res.error) setError(res.error);
       else setCourses(res.data?.courses ?? []);
@@ -46,14 +46,22 @@ export default function CoursesScreen() {
     });
   }, [session]);
 
-  const inProgress = courses.filter((c) => c.progress_pct > 0 && c.progress_pct < 100);
-  const completed   = courses.filter((c) => c.progress_pct === 100);
-  const notStarted  = courses.filter((c) => c.progress_pct === 0);
+  const enrolled  = courses.filter((c) => c.enrolled);
+  const available = courses.filter((c) => !c.enrolled);
 
-  const filteredCourses =
-    filter === 'all'        ? courses :
-    filter === 'inProgress' ? inProgress :
-    /* completed */           completed;
+  const displayed =
+    filter === 'enrolled'  ? enrolled  :
+    filter === 'available' ? available :
+    courses;
+
+  const handlePress = (course: Course) => {
+    if (!course.enrolled && Number(course.price) > 0) {
+      // Not purchased — navigate to detail which shows enroll/pay CTA
+      router.push(`/courses/${course.id}` as any);
+    } else {
+      router.push(`/courses/${course.id}` as any);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -72,9 +80,9 @@ export default function CoursesScreen() {
           </Text>
           {!loading && (
             <View style={styles.statsRow}>
-              <StatChip value={String(courses.length)}     label="Courses" />
-              <StatChip value={String(inProgress.length)}  label="In Progress" accent />
-              <StatChip value={String(completed.length)}   label="Completed" />
+              <StatChip value={String(courses.length)}  label="Courses" />
+              <StatChip value={String(enrolled.length)} label="Enrolled" accent />
+              <StatChip value={String(available.length)} label="Available" />
             </View>
           )}
         </View>
@@ -96,80 +104,32 @@ export default function CoursesScreen() {
             ))}
           </ScrollView>
 
-          {/* Loading */}
           {loading && (
             <View style={styles.center}>
               <ActivityIndicator color={Palette.gold} size="large" />
             </View>
           )}
 
-          {/* Error */}
           {!loading && error && (
             <Card style={styles.errorCard}>
               <Text style={styles.errorText}>{error}</Text>
             </Card>
           )}
 
-          {/* Content */}
           {!loading && !error && (
             <>
-              {/* Continue learning (always shown if any) */}
-              {filter === 'all' && inProgress.length > 0 && (
-                <>
-                  <SectionTitle>Continue learning</SectionTitle>
-                  <View style={styles.list}>
-                    {inProgress.map((c) => (
-                      <CourseCard key={c.id} course={c} featured />
-                    ))}
-                  </View>
-                </>
-              )}
-
-              {/* Filtered results */}
-              {filter !== 'all' && (
-                <>
-                  {filteredCourses.length > 0 ? (
-                    <View style={styles.list}>
-                      {filteredCourses.map((c) => (
-                        <CourseCard key={c.id} course={c} featured={filter === 'inProgress'} />
-                      ))}
-                    </View>
-                  ) : (
-                    <EmptyState
-                      symbol={filter === 'inProgress' ? '📚' : '🏆'}
-                      title={filter === 'inProgress' ? 'Nothing in progress' : 'No completed courses'}
-                      body={filter === 'inProgress' ? 'Start any course below to track your progress.' : 'Complete courses to see them here.'}
-                    />
-                  )}
-                </>
-              )}
-
-              {/* All courses section */}
-              {filter === 'all' && notStarted.length > 0 && (
-                <>
-                  <SectionTitle>All courses</SectionTitle>
-                  <View style={styles.list}>
-                    {notStarted.map((c) => (
-                      <CourseCard key={c.id} course={c} />
-                    ))}
-                  </View>
-                </>
-              )}
-
-              {/* Completed */}
-              {filter === 'all' && completed.length > 0 && (
-                <>
-                  <SectionTitle>Completed</SectionTitle>
-                  <View style={styles.list}>
-                    {completed.map((c) => (
-                      <CourseCard key={c.id} course={c} />
-                    ))}
-                  </View>
-                </>
-              )}
-
-              {courses.length === 0 && (
-                <EmptyState symbol="◉" title="No courses yet" body="Check back soon — new teachings are added regularly." />
+              {displayed.length === 0 ? (
+                <EmptyState
+                  symbol={filter === 'enrolled' ? '📚' : '🎓'}
+                  title={filter === 'enrolled' ? 'No enrolled courses' : filter === 'available' ? 'No available courses' : 'No courses yet'}
+                  body={filter === 'enrolled' ? 'Purchase a course below to get started.' : 'Check back soon — new teachings are added regularly.'}
+                />
+              ) : (
+                <View style={styles.list}>
+                  {displayed.map((c) => (
+                    <CourseCard key={c.id} course={c} onPress={() => handlePress(c)} />
+                  ))}
+                </View>
               )}
             </>
           )}
@@ -179,7 +139,76 @@ export default function CoursesScreen() {
   );
 }
 
-// ─── Sub-components ────────────────────────────────────────────────────────────
+// ─── Course card ──────────────────────────────────────────────────────────────
+
+function CourseCard({ course, onPress }: { course: Course; onPress: () => void }) {
+  const isLocked = !course.enrolled && Number(course.price) > 0;
+
+  return (
+    <Pressable onPress={onPress}>
+      <Card style={[styles.courseCard, isLocked && styles.courseCardLocked] as any}>
+        {/* Art banner */}
+        <View style={[styles.courseBanner, isLocked && styles.courseBannerLocked]}>
+          <Text style={styles.courseBannerEmoji}>{isLocked ? '🔒' : '📖'}</Text>
+          {isLocked && (
+            <View style={styles.priceBadge}>
+              <Text style={styles.priceBadgeText}>{formatPrice(course.price)}</Text>
+            </View>
+          )}
+          {course.enrolled && (
+            <View style={styles.enrolledBadge}>
+              <Text style={styles.enrolledBadgeText}>✓ Enrolled</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Course info */}
+        <View style={styles.courseBody}>
+          {/* Level / status pill */}
+          {course.level ? (
+            <View style={styles.levelPill}>
+              <Text style={styles.levelPillText}>{course.level.toUpperCase()}</Text>
+            </View>
+          ) : null}
+
+          <Text style={styles.courseTitle} numberOfLines={2}>{course.title}</Text>
+
+          {course.mentor_name && (
+            <Text style={ui.small}>with {course.mentor_name}</Text>
+          )}
+
+          {/* Progress bar for enrolled */}
+          {course.enrolled && (course.progress_pct ?? 0) > 0 && (
+            <View style={styles.progressRow}>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${course.progress_pct ?? 0}%` as any }]} />
+              </View>
+              <Text style={styles.progressPct}>{course.progress_pct ?? 0}%</Text>
+            </View>
+          )}
+
+          {/* CTA row */}
+          <View style={styles.courseFooter}>
+            {isLocked ? (
+              <>
+                <Text style={styles.lockPrice}>{formatPrice(course.price)}</Text>
+                <View style={styles.unlockBtn}>
+                  <Text style={styles.unlockBtnText}>Enroll →</Text>
+                </View>
+              </>
+            ) : (
+              <View style={styles.openBtn}>
+                <Text style={styles.openBtnText}>
+                  {(course.progress_pct ?? 0) > 0 ? 'Continue →' : 'Start course →'}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Card>
+    </Pressable>
+  );
+}
 
 function StatChip({ value, label, accent = false }: { value: string; label: string; accent?: boolean }) {
   return (
@@ -200,80 +229,13 @@ function EmptyState({ symbol, title, body }: { symbol: string; title: string; bo
   );
 }
 
-function CourseCard({ course, featured = false }: { course: Course; featured?: boolean }) {
-  const lvl = LEVEL_GRADIENT[course.level] ?? LEVEL_DEFAULT;
-
-  return (
-    <Pressable onPress={() => router.push(`/courses/${course.id}` as any)}>
-      {featured ? (
-        /* Featured / in-progress card — tall with banner */
-        <Card style={styles.featuredCard}>
-          {/* Banner */}
-          <View style={[styles.banner, { backgroundColor: lvl.bg }]}>
-            <View style={[styles.bannerAccent, { backgroundColor: lvl.accent }]} />
-            <Text style={styles.bannerEmoji}>📖</Text>
-            {/* Level badge */}
-            <View style={[styles.levelBadge, { backgroundColor: lvl.accent + '22', borderColor: lvl.accent + '66' }]}>
-              <Text style={[styles.levelText, { color: lvl.text }]}>{course.level}</Text>
-            </View>
-          </View>
-
-          <View style={styles.featuredMeta}>
-            <Text style={styles.courseTitle} numberOfLines={2}>{course.title}</Text>
-            {course.description ? (
-              <Text style={ui.small} numberOfLines={2}>{course.description}</Text>
-            ) : null}
-            {/* Progress */}
-            <View style={styles.progressRow}>
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${course.progress_pct}%` }]} />
-              </View>
-              <Text style={styles.progressPct}>{course.progress_pct}%</Text>
-            </View>
-            <Text style={styles.lessonCount}>
-              {course.completed_lessons} / {course.total_lessons} lessons
-            </Text>
-          </View>
-        </Card>
-      ) : (
-        /* Compact card for available / completed */
-        <Card style={styles.compactCard}>
-          <View style={[styles.compactIcon, { backgroundColor: lvl.bg }]}>
-            <Text style={styles.compactIconEmoji}>📖</Text>
-          </View>
-          <View style={styles.compactMeta}>
-            <View style={[styles.compactLevelBadge, { backgroundColor: lvl.bg }]}>
-              <Text style={[styles.levelText, { color: lvl.text }]}>{course.level}</Text>
-            </View>
-            <Text style={styles.courseTitle} numberOfLines={2}>{course.title}</Text>
-            <View style={styles.compactFooter}>
-              <Text style={styles.lessonCount}>
-                {course.total_lessons} lesson{course.total_lessons !== 1 ? 's' : ''}
-              </Text>
-              {course.progress_pct === 100 && (
-                <View style={styles.completedBadge}>
-                  <Text style={styles.completedText}>✓ Complete</Text>
-                </View>
-              )}
-            </View>
-          </View>
-          <Text style={styles.arrow}>›</Text>
-        </Card>
-      )}
-    </Pressable>
-  );
-}
-
-// ─── Styles ────────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const chipStyles = StyleSheet.create({
   wrap: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
+    flex: 1, alignItems: 'center', gap: 2,
     backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 14,
-    paddingVertical: 10,
+    borderRadius: 14, paddingVertical: 10,
   },
   wrapAccent: { backgroundColor: 'rgba(201,162,77,0.25)' },
   value: { color: '#FFFFFF', fontFamily: 'serif', fontSize: 22, fontWeight: '700' },
@@ -290,142 +252,134 @@ const emptyStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Palette.ivory },
   scroll: { paddingBottom: 120 },
-
   headerOuter: { paddingHorizontal: Spacing.three },
 
-  // ── Hero band ──
+  // Hero band
   hero: {
     backgroundColor: Palette.charcoal,
-    marginHorizontal: 0,
     paddingHorizontal: Spacing.three,
     paddingTop: 20,
     paddingBottom: 28,
     gap: 10,
   },
-  heroTitle: {
-    color: '#F0E6CC',
-    fontFamily: 'serif',
-    fontSize: 26,
-    fontWeight: '700',
-  },
+  heroTitle: { color: '#F0E6CC', fontFamily: 'serif', fontSize: 26, fontWeight: '700' },
   heroBody: { color: 'rgba(255,255,255,0.55)', fontSize: 14, lineHeight: 20 },
   statsRow: { flexDirection: 'row', gap: 10, marginTop: 6 },
 
-  body: {
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.three,
-    gap: Spacing.three,
-  },
+  body: { paddingHorizontal: Spacing.three, paddingTop: Spacing.three, gap: Spacing.three },
 
-  // ── Filters ──
+  // Filter tabs
   filterRow: { gap: 8, paddingVertical: 2 },
   filterTab: {
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-    borderRadius: 20,
-    backgroundColor: Palette.surface,
-    borderWidth: 1,
-    borderColor: Palette.line,
+    paddingHorizontal: 18, paddingVertical: 9,
+    borderRadius: 20, backgroundColor: Palette.surface,
+    borderWidth: 1, borderColor: Palette.line,
   },
   filterTabActive: { backgroundColor: Palette.charcoal, borderColor: Palette.charcoal },
   filterLabel: { color: Palette.stone, fontSize: 13, fontWeight: '600' },
   filterLabelActive: { color: '#FFFFFF' },
 
   center: { paddingVertical: 48, alignItems: 'center' },
-  errorCard: { borderColor: Palette.blush, backgroundColor: Palette.blush },
-  errorText: { color: Palette.danger, fontSize: 14, textAlign: 'center' },
+  errorCard: { backgroundColor: Palette.blush },
+  errorText: { color: Palette.danger, fontSize: 14 },
 
-  list: { gap: 14 },
+  list: { gap: 16 },
 
-  // ── Featured card ──
-  featuredCard: {
-    gap: 0,
-    padding: 0,
-    overflow: 'hidden',
-    flexDirection: 'column',
-  },
-  banner: {
-    height: 150,
+  // Course card
+  courseCard: { gap: 0, padding: 0, overflow: 'hidden' },
+  courseCardLocked: { opacity: 0.92 },
+
+  courseBanner: {
+    height: 140,
+    backgroundColor: Palette.goldSoft,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
     position: 'relative',
   },
-  bannerAccent: {
-    position: 'absolute',
-    top: -20,
-    right: -20,
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    opacity: 0.15,
-  },
-  bannerEmoji: { fontSize: 52, marginBottom: 6 },
-  levelBadge: {
+  courseBannerLocked: { backgroundColor: '#F0EEF0' },
+  courseBannerEmoji: { fontSize: 52 },
+
+  priceBadge: {
     position: 'absolute',
     top: 12,
-    left: 14,
+    right: 12,
+    backgroundColor: Palette.charcoal,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  priceBadgeText: {
+    color: Palette.gold,
+    fontSize: 13,
+    fontWeight: '800',
+    fontFamily: 'serif',
+  },
+
+  enrolledBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: '#D1FAE5',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  enrolledBadgeText: { color: '#065F46', fontSize: 12, fontWeight: '800' },
+
+  courseBody: { padding: 16, gap: 8 },
+
+  levelPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: Palette.goldSoft,
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 3,
-    borderWidth: 1,
   },
-  levelText: { fontSize: 11, fontWeight: '700' },
-  featuredMeta: { padding: 16, gap: 8 },
-
-  progressRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  progressTrack: {
-    flex: 1,
-    height: 6,
-    borderRadius: 6,
-    backgroundColor: Palette.goldSoft,
-    overflow: 'hidden',
-  },
-  progressFill: { height: '100%', borderRadius: 6, backgroundColor: Palette.gold },
-  progressPct: { color: Palette.goldDark, fontSize: 12, fontWeight: '700', minWidth: 34, textAlign: 'right' },
+  levelPillText: { color: Palette.goldDark, fontSize: 11, fontWeight: '800', letterSpacing: 0.4 },
 
   courseTitle: {
     color: Palette.charcoal,
     fontFamily: 'serif',
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
-    lineHeight: 23,
+    lineHeight: 24,
   },
-  lessonCount: { color: Palette.stone, fontSize: 13 },
 
-  // ── Compact card ──
-  compactCard: {
+  progressRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  progressTrack: {
+    flex: 1, height: 6, borderRadius: 6,
+    backgroundColor: Palette.goldSoft, overflow: 'hidden',
+  },
+  progressFill: { height: '100%', borderRadius: 6, backgroundColor: Palette.gold },
+  progressPct: { color: Palette.goldDark, fontSize: 12, fontWeight: '700', minWidth: 34, textAlign: 'right' },
+
+  courseFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 14,
+    justifyContent: 'space-between',
+    marginTop: 4,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Palette.line,
   },
-  compactIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
+  lockPrice: {
+    color: Palette.charcoal,
+    fontFamily: 'serif',
+    fontSize: 20,
+    fontWeight: '800',
   },
-  compactIconEmoji: { fontSize: 28 },
-  compactMeta: { flex: 1, gap: 5 },
-  compactLevelBadge: {
-    alignSelf: 'flex-start',
+  unlockBtn: {
+    backgroundColor: Palette.goldDark,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
     borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginBottom: 1,
   },
-  compactFooter: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 2 },
-
-  completedBadge: {
-    backgroundColor: '#D4EDDA',
+  unlockBtnText: { color: Palette.surface, fontSize: 13, fontWeight: '700' },
+  openBtn: {
+    backgroundColor: Palette.charcoal,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
     borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
   },
-  completedText: { color: '#2D6A4F', fontSize: 12, fontWeight: '700' },
-
-  arrow: { color: Palette.goldDark, fontSize: 28, paddingRight: 6 },
+  openBtnText: { color: Palette.surface, fontSize: 13, fontWeight: '700' },
 });

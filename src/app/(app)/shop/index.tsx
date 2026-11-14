@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppHeader, Card, Screen, SectionTitle, ui } from '@/components/karma-ui';
 import { Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
-import { type ShopItem, apiGetShopItems } from '@/services/api';
+import { type ShopItem, apiGetCart, apiGetShopItems } from '@/services/api';
 
 const CATEGORIES = ['All', 'Malas', 'Incense', 'Crystals', 'Texts', 'Ritual Tools', 'Apparel'] as const;
 
@@ -41,13 +41,22 @@ export default function DivineShopScreen() {
   const [selectedCat, setSelectedCat] = useState<string>('All');
   const [items, setItems] = useState<ShopItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cartCount, setCartCount] = useState(0);
 
   const fetchItems = useCallback(
     async () => {
       if (!session) return;
       setLoading(true);
-      const res = await apiGetShopItems(session, selectedCat);
-      if (res.data) setItems(res.data.items);
+      const [shopRes, cartRes] = await Promise.allSettled([
+        apiGetShopItems(session, selectedCat),
+        apiGetCart(session),
+      ]);
+      if (shopRes.status === 'fulfilled' && shopRes.value.data) {
+        setItems(shopRes.value.data.items);
+      }
+      if (cartRes.status === 'fulfilled' && cartRes.value.data) {
+        setCartCount(cartRes.value.data.items.reduce((s, i) => s + i.quantity, 0));
+      }
       setLoading(false);
     },
     [session, selectedCat]
@@ -69,6 +78,19 @@ export default function DivineShopScreen() {
           title="Divine Shop"
           subtitle="Sacred items curated for your journey"
           back
+          action={
+            <Pressable
+              style={styles.cartBtn}
+              onPress={() => router.push('/shop/cart' as any)}
+            >
+              <Text style={styles.cartBtnIcon}>🛒</Text>
+              {cartCount > 0 && (
+                <View style={styles.cartBadge}>
+                  <Text style={styles.cartBadgeText}>{cartCount > 9 ? '9+' : String(cartCount)}</Text>
+                </View>
+              )}
+            </Pressable>
+          }
         />
 
         {/* Orders button */}
@@ -78,7 +100,6 @@ export default function DivineShopScreen() {
         >
           <Text style={styles.ordersBtnText}>📦  My Orders</Text>
         </Pressable>
-
         {/* Category filter bar */}
         <ScrollView
           horizontal
@@ -214,6 +235,18 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   ordersBtnText: { color: Palette.goldDark, fontSize: 13, fontWeight: '700' },
+  cartBtn: {
+    width: 42, height: 42, borderRadius: 21, backgroundColor: Palette.surface,
+    borderWidth: 1, borderColor: Palette.line, alignItems: 'center', justifyContent: 'center',
+    position: 'relative',
+  },
+  cartBtnIcon: { fontSize: 20 },
+  cartBadge: {
+    position: 'absolute', top: 4, right: 4, minWidth: 16, height: 16,
+    borderRadius: 8, backgroundColor: Palette.goldDark, alignItems: 'center',
+    justifyContent: 'center', paddingHorizontal: 3,
+  },
+  cartBadgeText: { color: Palette.surface, fontSize: 9, fontWeight: '800' },
 
   catScrollView: { flexGrow: 0 },
   catBar: { flexDirection: 'row', gap: 8, paddingVertical: 10 },

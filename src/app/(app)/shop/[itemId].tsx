@@ -18,6 +18,7 @@ import { Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import {
   type ShopItem,
+  apiAddToCart,
   apiGetShopItemDetail,
   apiPurchaseShopItem,
 } from '@/services/api';
@@ -50,6 +51,8 @@ export default function ShopItemDetailScreen() {
   const [quantity, setQuantity] = useState(1);
   const [address, setAddress] = useState('');
   const [purchasing, setPurchasing] = useState(false);
+  const [addingToCart, setAddingToCart] = useState(false);
+  const [cartNotice, setCartNotice] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -61,6 +64,19 @@ export default function ShopItemDetailScreen() {
       });
     }, [session, itemId])
   );
+
+  const handleAddToCart = async () => {
+    if (!session || !item) return;
+    setAddingToCart(true);
+    const res = await apiAddToCart(session, item.id, quantity);
+    setAddingToCart(false);
+    if (res.error) {
+      Alert.alert('Error', res.error);
+    } else {
+      setCartNotice('Added to cart!');
+      setTimeout(() => setCartNotice(''), 2500);
+    }
+  };
 
   const handlePurchase = async () => {
     if (!session || !item) return;
@@ -162,6 +178,30 @@ export default function ShopItemDetailScreen() {
           {!outOfStock && (
             <Card style={styles.checkoutCard}>
               <Text style={styles.checkoutTitle}>Place Your Order</Text>
+
+              {cartNotice !== '' && (
+                <Text style={{ color: '#065F46', fontWeight: '700', fontSize: 13 }}>✓ {cartNotice}</Text>
+              )}
+
+              {/* Add to cart button */}
+              <Pressable
+                style={[styles.addToCartBtn, addingToCart && styles.buyBtnDisabled]}
+                onPress={handleAddToCart}
+                disabled={addingToCart}
+              >
+                {addingToCart ? (
+                  <ActivityIndicator color={Palette.goldDark} size="small" />
+                ) : (
+                  <Text style={styles.addToCartBtnText}>🛒 Add to Cart</Text>
+                )}
+              </Pressable>
+
+              <Pressable
+                style={styles.viewCartBtn}
+                onPress={() => router.push('/shop/cart' as any)}
+              >
+                <Text style={styles.viewCartBtnText}>View Cart →</Text>
+              </Pressable>
 
               <View style={styles.qtyRow}>
                 <Text style={styles.fieldLabel}>Quantity</Text>
@@ -272,6 +312,17 @@ const styles = StyleSheet.create({
   },
   buyBtnDisabled: { opacity: 0.6 },
   buyBtnText: { color: '#FFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
+  addToCartBtn: {
+    backgroundColor: Palette.goldSoft,
+    borderWidth: 1,
+    borderColor: Palette.goldDark,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  addToCartBtnText: { color: Palette.goldDark, fontSize: 15, fontWeight: '700' },
+  viewCartBtn: { alignSelf: 'center', paddingVertical: 4 },
+  viewCartBtnText: { color: Palette.goldDark, fontSize: 13, fontWeight: '700' },
   errorCard: { alignItems: 'center', gap: 12, paddingVertical: 40 },
   errorIcon: { fontSize: 48 },
   errorTitle: { color: '#252525', fontFamily: 'serif', fontSize: 18, fontWeight: '700' },

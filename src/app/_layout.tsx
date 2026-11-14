@@ -3,19 +3,16 @@ import * as SplashScreen from 'expo-splash-screen';
 import { DefaultTheme, ThemeProvider } from 'expo-router';
 
 import { SessionProvider, useSession } from '@/context/auth-context';
-import { PrototypeProvider } from '@/context/prototype-context';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   return (
     <SessionProvider>
-      <PrototypeProvider>
-        <ThemeProvider value={DefaultTheme}>
-          <SplashScreenController />
-          <RootNavigator />
-        </ThemeProvider>
-      </PrototypeProvider>
+      <ThemeProvider value={DefaultTheme}>
+        <SplashScreenController />
+        <RootNavigator />
+      </ThemeProvider>
     </SessionProvider>
   );
 }
