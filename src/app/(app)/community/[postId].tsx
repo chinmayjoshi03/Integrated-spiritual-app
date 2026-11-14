@@ -67,27 +67,7 @@ export default function PostDetailScreen() {
   };
 
   const handleDeletePost = () => {
-    if (!session || !post) return;
-
-    Alert.alert(
-      'Delete Post',
-      'This will permanently remove your post and all replies. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const res = await apiDeletePost(session, post.id);
-            if (res.error) {
-              Alert.alert('Error', res.error);
-            } else {
-              router.back();
-            }
-          },
-        },
-      ]
-    );
+    Alert.alert('Not supported', 'Post deletion is not available in the current version.');
   };
 
   const handlePostComment = async () => {
@@ -161,12 +141,12 @@ export default function PostDetailScreen() {
             <Text style={styles.postContent}>{post.content}</Text>
 
             <View style={styles.postActionsRow}>
-              <Pressable style={styles.upvoteBtn} onPress={handleToggleLike}>
+              {/* <Pressable style={styles.upvoteBtn} onPress={handleToggleLike}>
                 <Text style={[styles.upvoteIcon, post.liked_by_user && styles.upvoteIconActive]}>
                   {post.liked_by_user ? '▲ Liked' : '△ Upvote'}
                 </Text>
                 <Text style={styles.upvoteCount}>{post.likes_count}</Text>
-              </Pressable>
+              </Pressable> */}
 
               <View style={styles.postActionsRight}>
                 <Text style={styles.repliesCountText}>{comments.length} replies</Text>

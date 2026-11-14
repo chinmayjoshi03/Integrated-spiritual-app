@@ -1,3 +1,4 @@
+import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -23,7 +24,6 @@ import {
   apiGetPosts,
   apiGetVolunteerOpportunities,
   apiToggleLikePost,
-  apiToggleRegisterEvent,
 } from '@/services/api';
 
 type TabSegment = 'community' | 'events' | 'volunteer';
@@ -98,55 +98,16 @@ export default function ConnectScreen() {
     await apiToggleLikePost(session, post.id);
   };
 
-  const handleDeletePost = (post: CommunityPost) => {
-    if (!session) return;
-
-    Alert.alert(
-      'Delete Post',
-      `Delete "${post.title}"? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const res = await apiDeletePost(session, post.id);
-            if (res.error) {
-              Alert.alert('Error', res.error);
-            } else {
-              setPosts((prev) => prev.filter((p) => p.id !== post.id));
-            }
-          },
-        },
-      ]
-    );
+  const handleDeletePost = async (_post: CommunityPost) => {
+    Alert.alert('Not supported', 'Post deletion is not available.');
   };
 
-  const handleRegisterEvent = async (event: EventItem) => {
-    if (!session) return;
-    // Optimistic toggle
-    setEvents((prev) =>
-      prev.map((e) =>
-        e.id === event.id
-          ? {
-              ...e,
-              registered_by_user: !e.registered_by_user,
-              attendees_count: e.registered_by_user
-                ? e.attendees_count - 1
-                : e.attendees_count + 1,
-            }
-          : e
-      )
-    );
-    const res = await apiToggleRegisterEvent(session, event.id);
-    if (res.data?.registered) {
-      Alert.alert('RSVP Confirmed', `You are registered for "${event.title}".`);
-    }
+  const handleRegisterEvent = async (_event: EventItem) => {
+    // Registration is handled on the event detail screen
   };
 
   const handleApplyVolunteer = async (opp: VolunteerOpportunity) => {
     if (!session || opp.applied_by_user) return;
-
     Alert.alert(
       'Offer Seva',
       `Would you like to register your interest for "${opp.title}"?`,
@@ -158,11 +119,7 @@ export default function ConnectScreen() {
             setOpportunities((prev) =>
               prev.map((o) =>
                 o.id === opp.id
-                  ? {
-                      ...o,
-                      applied_by_user: true,
-                      current_volunteers: o.current_volunteers + 1,
-                    }
+                  ? { ...o, applied_by_user: true, current_volunteers: o.current_volunteers + 1 }
                   : o
               )
             );
@@ -176,16 +133,21 @@ export default function ConnectScreen() {
 
   return (
     <Screen>
-      <AppHeader title="Connect & Seva" subtitle="Community discussions, events, & service" />
+      <AppHeader title="Connect & Seva" subtitle="Community, events & service" />
 
-      {/* ── Segment Controller Tabs ── */}
+      {/* ── Segment Controller ── */}
       <View style={styles.segmentContainer}>
         <Pressable
           style={[styles.segmentBtn, activeSegment === 'community' && styles.segmentBtnActive]}
           onPress={() => setActiveSegment('community')}
         >
+          <Ionicons
+            name="chatbubbles-outline"
+            size={14}
+            color={activeSegment === 'community' ? Palette.surface : Palette.stone}
+          />
           <Text style={[styles.segmentText, activeSegment === 'community' && styles.segmentTextActive]}>
-            💬 Community
+            Community
           </Text>
         </Pressable>
 
@@ -193,8 +155,13 @@ export default function ConnectScreen() {
           style={[styles.segmentBtn, activeSegment === 'events' && styles.segmentBtnActive]}
           onPress={() => setActiveSegment('events')}
         >
+          <Ionicons
+            name="calendar-outline"
+            size={14}
+            color={activeSegment === 'events' ? Palette.surface : Palette.stone}
+          />
           <Text style={[styles.segmentText, activeSegment === 'events' && styles.segmentTextActive]}>
-            📅 Events
+            Events
           </Text>
         </Pressable>
 
@@ -202,13 +169,18 @@ export default function ConnectScreen() {
           style={[styles.segmentBtn, activeSegment === 'volunteer' && styles.segmentBtnActive]}
           onPress={() => setActiveSegment('volunteer')}
         >
+          <MaterialCommunityIcons
+            name="hand-heart-outline"
+            size={15}
+            color={activeSegment === 'volunteer' ? Palette.surface : Palette.stone}
+          />
           <Text style={[styles.segmentText, activeSegment === 'volunteer' && styles.segmentTextActive]}>
-            🤝 Seva
+            Seva
           </Text>
         </Pressable>
       </View>
 
-      {/* ── SECTION 1: COMMUNITY ── */}
+      {/* ════════════════════════ COMMUNITY ════════════════════════ */}
       {activeSegment === 'community' && (
         <View style={styles.sectionWrap}>
           <View style={styles.communityHeaderRow}>
@@ -225,22 +197,19 @@ export default function ConnectScreen() {
                 </Pressable>
               ))}
             </ScrollView>
-
             <Pressable style={styles.newPostBtn} onPress={() => router.push('/community/create-post' as any)}>
               <Text style={styles.newPostBtnText}>+ Post</Text>
             </Pressable>
           </View>
 
           {postsLoading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator color={Palette.gold} size="large" />
-            </View>
+            <View style={styles.loadingWrap}><ActivityIndicator color={Palette.gold} size="large" /></View>
           ) : posts.length === 0 ? (
             <Card style={styles.emptyCard}>
-              <Text style={styles.emptyIcon}>💬</Text>
+              <Ionicons name="chatbubbles-outline" size={44} color={Palette.stoneLight} />
               <Text style={styles.emptyTitle}>No posts in this topic</Text>
               <Text style={[ui.small, { textAlign: 'center' }]}>
-                Be the first to start a conversation in the community!
+                Be the first to start a conversation!
               </Text>
               <Pressable style={styles.createFirstBtn} onPress={() => router.push('/community/create-post' as any)}>
                 <Text style={styles.createFirstText}>Create First Post</Text>
@@ -253,7 +222,7 @@ export default function ConnectScreen() {
                   <Card style={styles.postCard}>
                     <View style={styles.postTopRow}>
                       <View style={styles.authorBadge}>
-                        <Text style={styles.authorAvatar}>👤</Text>
+                        <Ionicons name="person-circle-outline" size={18} color={Palette.stone} />
                         <Text style={styles.authorName}>{post.author_name}</Text>
                       </View>
                       <View style={styles.postTag}>
@@ -262,21 +231,24 @@ export default function ConnectScreen() {
                     </View>
 
                     <Text style={styles.postTitle}>{post.title}</Text>
-                    <Text style={styles.postSnippet} numberOfLines={3}>
-                      {post.content}
-                    </Text>
+                    <Text style={styles.postSnippet} numberOfLines={3}>{post.content}</Text>
 
                     <View style={styles.postFooter}>
-                      <Pressable style={styles.likeBtn} onPress={() => handleLikePost(post)}>
-                        <Text style={[styles.likeIcon, post.liked_by_user && styles.likeIconActive]}>
-                          {post.liked_by_user ? '▲ Liked' : '△ Upvote'}
+                      {/* Upvote button — commented out per request */}
+                      {/* <Pressable style={styles.likeBtn} onPress={() => handleLikePost(post)}>
+                        <Ionicons
+                          name={post.liked_by_user ? 'arrow-up-circle' : 'arrow-up-circle-outline'}
+                          size={16}
+                          color={post.liked_by_user ? Palette.goldDark : Palette.stone}
+                        />
+                        <Text style={[styles.likeCount, post.liked_by_user && styles.likeCountActive]}>
+                          {post.likes_count}
                         </Text>
-                        <Text style={styles.likeCount}>{post.likes_count}</Text>
-                      </Pressable>
+                      </Pressable> */}
 
                       <View style={styles.postFooterRight}>
                         <View style={styles.commentBadge}>
-                          <Text style={styles.commentIcon}>💬</Text>
+                          <Ionicons name="chatbubble-outline" size={14} color={Palette.stone} />
                           <Text style={styles.commentCount}>{post.comments_count} replies</Text>
                         </View>
                         {user?.id === post.user_id && (
@@ -287,7 +259,7 @@ export default function ConnectScreen() {
                               handleDeletePost(post);
                             }}
                           >
-                            <Text style={styles.deleteBtnText}>🗑</Text>
+                            <Ionicons name="trash-outline" size={14} color="#991B1B" />
                           </Pressable>
                         )}
                       </View>
@@ -300,18 +272,16 @@ export default function ConnectScreen() {
         </View>
       )}
 
-      {/* ── SECTION 2: EVENTS ── */}
+      {/* ════════════════════════ EVENTS ════════════════════════ */}
       {activeSegment === 'events' && (
         <View style={styles.sectionWrap}>
           <SectionTitle>Upcoming gatherings</SectionTitle>
 
           {eventsLoading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator color={Palette.gold} size="large" />
-            </View>
+            <View style={styles.loadingWrap}><ActivityIndicator color={Palette.gold} size="large" /></View>
           ) : events.length === 0 ? (
             <Card style={styles.emptyCard}>
-              <Text style={styles.emptyIcon}>📅</Text>
+              <Ionicons name="calendar-outline" size={44} color={Palette.stoneLight} />
               <Text style={styles.emptyTitle}>No upcoming events</Text>
               <Text style={[ui.small, { textAlign: 'center' }]}>Check back soon for new community gatherings.</Text>
             </Card>
@@ -323,48 +293,63 @@ export default function ConnectScreen() {
                 const dayStr = dateObj.getDate();
 
                 return (
-                  <Pressable key={event.id} onPress={() => router.push(`/events/${event.id}` as any)}>
-                    <Card style={styles.eventCard}>
-                      <View style={styles.eventHeaderRow}>
-                        <View style={styles.dateBlock}>
-                          <Text style={styles.dateMonth}>{monthStr}</Text>
-                          <Text style={styles.dateDay}>{dayStr}</Text>
-                        </View>
-
-                        <View style={styles.eventMainInfo}>
-                          <View style={styles.eventPillRow}>
-                            {event.is_online ? (
-                              <Pill>ONLINE EVENT</Pill>
-                            ) : (
-                              <View style={styles.inPersonPill}>
-                                <Text style={styles.inPersonText}>IN PERSON</Text>
-                              </View>
-                            )}
-                            <Text style={styles.attendeeCountText}>👥 {event.attendees_count} going</Text>
-                          </View>
-
-                          <Text style={styles.eventTitle}>{event.title}</Text>
-                          <Text style={styles.eventTimeText}>⏰ {event.time_str}</Text>
-                          <Text style={styles.eventLocationText}>📍 {event.location}</Text>
-                        </View>
+                  <Card key={event.id} style={styles.eventCard}>
+                    {/* Event details */}
+                    <View style={styles.eventHeaderRow}>
+                      <View style={styles.dateBlock}>
+                        <Text style={styles.dateMonth}>{monthStr}</Text>
+                        <Text style={styles.dateDay}>{dayStr}</Text>
                       </View>
 
-                      <Text style={styles.eventDesc} numberOfLines={2}>
-                        {event.description}
-                      </Text>
-
-                      <View style={styles.eventCardFooter}>
-                        <Pressable
-                          style={[styles.rsvpBtn, event.registered_by_user && styles.rsvpBtnActive]}
-                          onPress={() => handleRegisterEvent(event)}
-                        >
-                          <Text style={[styles.rsvpBtnText, event.registered_by_user && styles.rsvpBtnTextActive]}>
-                            {event.registered_by_user ? '✓ RSVP Registered' : 'Register for Event'}
-                          </Text>
-                        </Pressable>
+                      <View style={styles.eventMainInfo}>
+                        <View style={styles.eventPillRow}>
+                          {event.is_online ? (
+                            <Pill>ONLINE</Pill>
+                          ) : (
+                            <View style={styles.inPersonPill}>
+                              <Text style={styles.inPersonText}>IN PERSON</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.eventTitle}>{event.title}</Text>
                       </View>
-                    </Card>
-                  </Pressable>
+                    </View>
+
+                    <View style={styles.eventMetaBlock}>
+                      <View style={styles.eventMetaRow}>
+                        <Ionicons name="calendar-outline" size={14} color={Palette.goldDark} />
+                        <Text style={styles.eventMetaText}>
+                          {dateObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                        </Text>
+                      </View>
+                      <View style={styles.eventMetaRow}>
+                        <Ionicons name="time-outline" size={14} color={Palette.goldDark} />
+                        <Text style={styles.eventMetaText}>{event.time_str}</Text>
+                      </View>
+                      <View style={styles.eventMetaRow}>
+                        <Ionicons name="people-outline" size={14} color={Palette.goldDark} />
+                        <Text style={styles.eventMetaText}>{event.attendees_count} registered</Text>
+                      </View>
+                      <View style={styles.eventMetaRow}>
+                        <Ionicons name="location-outline" size={14} color={Palette.goldDark} />
+                        <Text style={styles.eventMetaText}>{event.location}</Text>
+                      </View>
+                    </View>
+
+                    {event.description ? (
+                      <Text style={styles.eventDesc} numberOfLines={2}>{event.description}</Text>
+                    ) : null}
+
+                    {/* View Event button at the bottom */}
+                    <Pressable
+                      style={styles.viewEventBtn}
+                      onPress={() => router.push(`/events/${event.id}` as any)}
+                    >
+                      <Ionicons name="eye-outline" size={16} color={Palette.goldDark} />
+                      <Text style={styles.viewEventText}>View Event</Text>
+                      <Ionicons name="chevron-forward" size={14} color={Palette.goldDark} />
+                    </Pressable>
+                  </Card>
                 );
               })}
             </View>
@@ -372,21 +357,19 @@ export default function ConnectScreen() {
         </View>
       )}
 
-      {/* ── SECTION 3: SEVA / VOLUNTEER ── */}
+      {/* ════════════════════════ SEVA ════════════════════════ */}
       {activeSegment === 'volunteer' && (
         <View style={styles.sectionWrap}>
           <SectionTitle>Seva opportunities</SectionTitle>
-          <Text style={[ui.body, { marginBottom: 12 }]}>
+          <Text style={[ui.body, { marginBottom: 4 }]}>
             Offer your time and skills in selfless service to support the community.
           </Text>
 
           {volunteersLoading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator color={Palette.gold} size="large" />
-            </View>
+            <View style={styles.loadingWrap}><ActivityIndicator color={Palette.gold} size="large" /></View>
           ) : opportunities.length === 0 ? (
             <Card style={styles.emptyCard}>
-              <Text style={styles.emptyIcon}>🤝</Text>
+              <MaterialCommunityIcons name="hand-heart-outline" size={44} color={Palette.stoneLight} />
               <Text style={styles.emptyTitle}>No active Seva roles</Text>
               <Text style={[ui.small, { textAlign: 'center' }]}>All volunteer positions are currently filled.</Text>
             </Card>
@@ -394,7 +377,8 @@ export default function ConnectScreen() {
             <View style={styles.volunteerList}>
               {opportunities.map((opp) => (
                 <Card key={opp.id} style={styles.volunteerCard}>
-                  <View style={styles.volHeader}>
+                  {/* ── 1. View Seva button (at top, like event) ── */}
+                  <View style={styles.volViewRow}>
                     <View style={styles.volCatBadge}>
                       <Text style={styles.volCatText}>{opp.category.toUpperCase()}</Text>
                     </View>
@@ -403,16 +387,35 @@ export default function ConnectScreen() {
                     </Text>
                   </View>
 
+                  {/* ── 2. Seva details ── */}
                   <Text style={styles.volTitle}>{opp.title}</Text>
-                  <Text style={styles.volLocation}>📍 {opp.location}</Text>
+
+                  <View style={styles.volMetaBlock}>
+                    <View style={styles.eventMetaRow}>
+                      <Ionicons name="location-outline" size={14} color={Palette.goldDark} />
+                      <Text style={styles.eventMetaText}>{opp.location}</Text>
+                    </View>
+                    <View style={styles.eventMetaRow}>
+                      <MaterialCommunityIcons name="hand-heart-outline" size={14} color={Palette.goldDark} />
+                      <Text style={styles.eventMetaText}>{opp.category}</Text>
+                    </View>
+                  </View>
+
                   <Text style={styles.volDesc}>{opp.description}</Text>
 
+                  {/* ── 3. Apply / Register button ── */}
                   <Pressable
                     style={[styles.volApplyBtn, opp.applied_by_user && styles.volApplyBtnDone]}
                     onPress={() => handleApplyVolunteer(opp)}
+                    disabled={opp.applied_by_user}
                   >
+                    <Ionicons
+                      name={opp.applied_by_user ? 'checkmark-circle' : 'person-add-outline'}
+                      size={16}
+                      color={opp.applied_by_user ? Palette.surface : Palette.goldDark}
+                    />
                     <Text style={[styles.volApplyText, opp.applied_by_user && styles.volApplyTextDone]}>
-                      {opp.applied_by_user ? '✓ Seva Application Submitted' : 'Offer Seva / Volunteer'}
+                      {opp.applied_by_user ? 'Seva Application Submitted' : 'Offer Seva / Volunteer'}
                     </Text>
                   </Pressable>
                 </Card>
@@ -428,7 +431,7 @@ export default function ConnectScreen() {
 const styles = StyleSheet.create({
   loadingWrap: { paddingVertical: 48, alignItems: 'center' },
 
-  // Segment Controller
+  // ── Segment Controller ──
   segmentContainer: {
     flexDirection: 'row',
     backgroundColor: Palette.surface,
@@ -444,22 +447,16 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 5,
   },
-  segmentBtnActive: {
-    backgroundColor: Palette.goldDark,
-  },
-  segmentText: {
-    color: Palette.charcoal,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  segmentTextActive: {
-    color: Palette.surface,
-  },
+  segmentBtnActive: { backgroundColor: Palette.goldDark },
+  segmentText: { color: Palette.charcoal, fontSize: 12, fontWeight: '700' },
+  segmentTextActive: { color: Palette.surface },
 
   sectionWrap: { gap: 12 },
 
-  // Community
+  // ── Community ──
   communityHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -491,45 +488,48 @@ const styles = StyleSheet.create({
   postCard: { gap: 8, padding: 16 },
   postTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   authorBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  authorAvatar: { fontSize: 16 },
   authorName: { color: Palette.charcoal, fontSize: 13, fontWeight: '700' },
   postTag: { backgroundColor: Palette.goldSoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   postTagText: { color: Palette.goldDark, fontSize: 11, fontWeight: '700' },
   postTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 17, fontWeight: '700', lineHeight: 22 },
   postSnippet: { color: Palette.stone, fontSize: 14, lineHeight: 20 },
-  postFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
-  likeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Palette.ivory,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Palette.line,
-  },
-  likeIcon: { fontSize: 12, fontWeight: '700', color: Palette.stone },
-  likeIconActive: { color: Palette.goldDark },
-  likeCount: { fontSize: 12, fontWeight: '700', color: Palette.charcoal },
+  postFooter: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 6 },
+  // likeBtn — commented out (upvote hidden)
+  // likeBtn: { ... },
+  // likeCount: { ... },
+  // likeCountActive: { ... },
   postFooterRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   deleteBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    padding: 6,
     borderRadius: 10,
     backgroundColor: '#FEE2E2',
     borderWidth: 1,
     borderColor: '#FCA5A5',
   },
-  deleteBtnText: { fontSize: 12, fontWeight: '700' },
-  commentBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  commentIcon: { fontSize: 13 },
+  commentBadge: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   commentCount: { color: Palette.stone, fontSize: 12, fontWeight: '600' },
 
-  // Events
+  // ── Events ──
   eventsList: { gap: 14 },
-  eventCard: { gap: 10, padding: 16 },
-  eventHeaderRow: { flexDirection: 'row', gap: 14 },
+  eventCard: { gap: 12, padding: 16 },
+
+  // 1. View Event button
+  viewEventBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: Palette.goldSoft,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
+  },
+  viewEventText: { color: Palette.goldDark, fontSize: 13, fontWeight: '700', flex: 1 },
+
+  // 2. Event header
+  eventHeaderRow: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
   dateBlock: {
     width: 52,
     height: 56,
@@ -543,53 +543,51 @@ const styles = StyleSheet.create({
   dateMonth: { color: Palette.goldDark, fontSize: 11, fontWeight: '800' },
   dateDay: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 20, fontWeight: '700' },
   eventMainInfo: { flex: 1, gap: 4 },
-  eventPillRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  eventPillRow: { flexDirection: 'row', alignItems: 'center' },
   inPersonPill: { backgroundColor: '#E0F2FE', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   inPersonText: { color: '#0369A1', fontSize: 10, fontWeight: '800' },
-  attendeeCountText: { color: Palette.stone, fontSize: 12, fontWeight: '600' },
-  eventTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 18, fontWeight: '700', marginTop: 2 },
-  eventTimeText: { color: Palette.stone, fontSize: 12, fontWeight: '600' },
-  eventLocationText: { color: Palette.goldDark, fontSize: 12, fontWeight: '600' },
-  eventDesc: { color: Palette.stone, fontSize: 13, lineHeight: 18 },
-  eventCardFooter: { marginTop: 4 },
-  rsvpBtn: {
-    backgroundColor: Palette.goldSoft,
-    paddingVertical: 10,
-    borderRadius: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Palette.gold,
-  },
-  rsvpBtnActive: { backgroundColor: Palette.goldDark, borderColor: Palette.goldDark },
-  rsvpBtnText: { color: Palette.goldDark, fontSize: 14, fontWeight: '700' },
-  rsvpBtnTextActive: { color: Palette.surface },
+  eventTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 17, fontWeight: '700', lineHeight: 22 },
 
-  // Volunteer
+  // Detail rows
+  eventMetaBlock: { gap: 6 },
+  eventMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  eventMetaText: { color: Palette.charcoal, fontSize: 13, fontWeight: '600', flex: 1 },
+
+  eventDesc: { color: Palette.stone, fontSize: 13, lineHeight: 18 },
+
+  // ── Seva / Volunteer ──
   volunteerList: { gap: 12 },
-  volunteerCard: { gap: 8, padding: 16 },
-  volHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  volunteerCard: { gap: 10, padding: 16 },
+
+  volViewRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   volCatBadge: { backgroundColor: '#D1FAE5', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   volCatText: { color: '#047857', fontSize: 10, fontWeight: '800' },
   volCountBadge: { color: Palette.stone, fontSize: 12, fontWeight: '600' },
   volTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 18, fontWeight: '700' },
-  volLocation: { color: Palette.goldDark, fontSize: 12, fontWeight: '600' },
+  volMetaBlock: { gap: 5 },
   volDesc: { color: Palette.stone, fontSize: 13, lineHeight: 18 },
   volApplyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     backgroundColor: Palette.surface,
     borderWidth: 1,
     borderColor: Palette.goldDark,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderRadius: 14,
-    alignItems: 'center',
-    marginTop: 6,
+    marginTop: 4,
   },
   volApplyBtnDone: { backgroundColor: '#059669', borderColor: '#059669' },
   volApplyText: { color: Palette.goldDark, fontSize: 14, fontWeight: '700' },
   volApplyTextDone: { color: Palette.surface },
 
-  // Empty
+  // ── Empty states ──
   emptyCard: { alignItems: 'center', gap: 10, paddingVertical: 36 },
-  emptyIcon: { fontSize: 44 },
   emptyTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 18, fontWeight: '700' },
   createFirstBtn: { backgroundColor: Palette.goldDark, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 14, marginTop: 4 },
   createFirstText: { color: Palette.surface, fontSize: 14, fontWeight: '700' },

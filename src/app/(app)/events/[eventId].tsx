@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -117,7 +118,9 @@ export default function EventDetailScreen() {
                 <Text style={styles.inPersonText}>IN-PERSON GATHERING</Text>
               </View>
             )}
-            <Text style={styles.attendeesBadge}>👥 {event.attendees_count} Attending</Text>
+            <Text style={styles.attendeesBadge}>
+            <Ionicons name="people-outline" size={13} color={Palette.stone} /> {event.attendees_count} Attending
+          </Text>
           </View>
 
           <Text style={styles.title}>{event.title}</Text>
@@ -125,7 +128,7 @@ export default function EventDetailScreen() {
           {/* Date & Location Grid */}
           <View style={styles.detailsGrid}>
             <View style={styles.detailRow}>
-              <Text style={styles.detailIcon}>📅</Text>
+              <Ionicons name="calendar-outline" size={20} color={Palette.goldDark} />
               <View>
                 <Text style={styles.detailLabel}>Date & Day</Text>
                 <Text style={styles.detailValue}>{formattedDate}</Text>
@@ -133,7 +136,7 @@ export default function EventDetailScreen() {
             </View>
 
             <View style={styles.detailRow}>
-              <Text style={styles.detailIcon}>⏰</Text>
+              <Ionicons name="time-outline" size={20} color={Palette.goldDark} />
               <View>
                 <Text style={styles.detailLabel}>Time</Text>
                 <Text style={styles.detailValue}>{event.time_str}</Text>
@@ -141,7 +144,7 @@ export default function EventDetailScreen() {
             </View>
 
             <View style={styles.detailRow}>
-              <Text style={styles.detailIcon}>📍</Text>
+              <Ionicons name="location-outline" size={20} color={Palette.goldDark} />
               <View>
                 <Text style={styles.detailLabel}>Location / Venue</Text>
                 <Text style={styles.detailValue}>{event.location}</Text>
@@ -154,7 +157,8 @@ export default function EventDetailScreen() {
 
           {event.is_online && event.meeting_link && event.registered_by_user && (
             <Pressable style={styles.joinLinkBtn} onPress={handleOpenLink}>
-              <Text style={styles.joinLinkText}>🔗 Open Online Meeting Link</Text>
+              <Ionicons name="link-outline" size={16} color="#4338CA" />
+              <Text style={styles.joinLinkText}>Open Online Meeting Link</Text>
             </Pressable>
           )}
 
@@ -168,7 +172,7 @@ export default function EventDetailScreen() {
               <ActivityIndicator color={Palette.surface} />
             ) : (
               <Text style={[styles.rsvpBtnText, event.registered_by_user && styles.rsvpBtnTextDone]}>
-                {event.registered_by_user ? '✓ Confirmed (Tap to Cancel RSVP)' : 'Confirm RSVP / Register Now'}
+                {event.registered_by_user ? '✓ Confirmed · Tap to Cancel RSVP' : 'Confirm RSVP / Register Now'}
               </Text>
             )}
           </Pressable>
@@ -201,12 +205,15 @@ const styles = StyleSheet.create({
   description: { color: Palette.charcoal, fontSize: 15, lineHeight: 22 },
 
   joinLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: '#EEF2FF',
     borderWidth: 1,
     borderColor: '#6366F1',
     paddingVertical: 12,
     borderRadius: 14,
-    alignItems: 'center',
+    paddingHorizontal: 16,
     marginVertical: 4,
   },
   joinLinkText: { color: '#4338CA', fontSize: 14, fontWeight: '700' },
