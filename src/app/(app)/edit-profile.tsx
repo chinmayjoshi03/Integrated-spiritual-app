@@ -1,300 +1,122 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { AppHeader, Card, Screen, ui } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import { DateField } from '@/components/date-field';
+import { ActionButton, AppHeader, Avatar, Card, Eyebrow, Field, Loading, Notice, Screen, ui } from '@/components/karma-ui';
+import { BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
+import { removeProfilePhoto, saveProfilePhoto, useProfilePhoto } from '@/context/profile-photo';
 import { apiGetProfile, apiUpdateProfile } from '@/services/api';
 
-export default function EditProfileScreen() {
-  const { session, user, updateUser } = useSession();
+const PHONE_RE = /^\+?\d{7,15}$/;
+const normalisePhone = (v: string) => v.replace(/[\s()-]/g, '');
 
-  // Pre-fill from auth context immediately — API call will overwrite with full data
+export default function EditProfileScreen() {
+  const { required } = useLocalSearchParams<{ required?: string }>();
+  const mustComplete = required === '1';
+  const { session, user, updateUser, signOut } = useSession();
+  const photo = useProfilePhoto();
+
   const [name, setName] = useState(user?.name ?? '');
-  const [phone, setPhone] = useState('');
-  const [dob, setDob] = useState('');
+  const [phone, setPhone] = useState(user?.phoneNumber ?? '');
+  const [dob, setDob] = useState(user?.dateOfBirth?.slice(0, 10) ?? '');
   const [age, setAge] = useState<number | null>(null);
-  const [profileLoading, setProfileLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [photoError, setPhotoError] = useState('');
 
   useEffect(() => {
     if (!session) return;
-    apiGetProfile(session).then((res) => {
+    void apiGetProfile(session).then((res) => {
       if (res.data) {
-        setName(res.data.name ?? user?.name ?? '');
+        setName(res.data.name ?? '');
         setPhone(res.data.phone_number ?? '');
         setDob(res.data.date_of_birth?.slice(0, 10) ?? '');
         setAge(res.data.age ?? null);
       }
-      // Always hide the loading indicator regardless of success/fail
-      setProfileLoading(false);
+      setLoading(false);
     });
   }, [session]);
 
-  const handleSave = async () => {
-    if (!session) return;
-    setError('');
-    setSaving(true);
-
-    const res = await apiUpdateProfile(session, {
-      name: name.trim(),
-      phoneNumber: phone.trim(),
-      dateOfBirth: dob,
-    });
-
-    setSaving(false);
-
-    if (res.error) {
-      setError(res.error);
-    } else {
-      if (res.data?.age !== undefined) setAge(res.data.age);
-      // Update the name in the auth context so Account screen reflects it immediately
-      updateUser({ name: name.trim() });
-      // Go back to Account screen
-      router.back();
+  const pickPhoto = async () => {
+    setPhotoError('');
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return setPhotoError('Allow photo access in Settings to choose a profile picture.');
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8 });
+    if (result.canceled || !result.assets?.[0]) return;
+    try {
+      await saveProfilePhoto(result.assets[0].uri);
+    } catch {
+      setPhotoError('Could not save this photo. Please try another one.');
     }
   };
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <Screen>
-          <AppHeader title="Edit Profile" subtitle="Update your personal details." back />
+  const photoOptions = () => {
+    if (!photo) return void pickPhoto();
+    Alert.alert('Profile photo', undefined, [
+      { text: 'Choose a new photo', onPress: () => void pickPhoto() },
+      { text: 'Remove photo', style: 'destructive', onPress: () => void removeProfilePhoto() },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
-          {/* Profile header */}
-          <Card style={styles.headerCard}>
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarInitials}>
-                {(name || user?.email || 'S')[0].toUpperCase()}
-              </Text>
-            </View>
-            <View style={{ flex: 1, gap: 3 }}>
-              <Text style={styles.headerName}>{name || 'Your Name'}</Text>
-              <Text style={ui.small}>{user?.email}</Text>
-              {age !== null && (
-                <View style={styles.ageBadge}>
-                  <Text style={styles.ageBadgeText}>{age} years old</Text>
-                </View>
-              )}
-            </View>
-          </Card>
+  const save = async () => {
+    if (!session) return;
+    setError('');
+    const cleanPhone = normalisePhone(phone);
+    if (!name.trim()) return setError('Please enter your name.');
+    if (!PHONE_RE.test(cleanPhone)) return setError('Enter a valid phone number (7–15 digits, optional +).');
+    if (!dob) return setError('Please choose your date of birth.');
+    setSaving(true);
+    const res = await apiUpdateProfile(session, { name: name.trim(), phoneNumber: cleanPhone, dateOfBirth: dob });
+    setSaving(false);
+    if (res.error || !res.data) return setError(res.error ?? 'Could not save your profile.');
+    updateUser({ name: res.data.name, phoneNumber: res.data.phone_number, dateOfBirth: res.data.date_of_birth, profileComplete: true });
+    if (mustComplete) router.replace('/');
+    else router.back();
+  };
 
-          {/* Form — always visible; fields show loading shimmer while fetching */}
-          <Card style={styles.formCard}>
-            <Text style={styles.sectionEyebrow}>PERSONAL DETAILS</Text>
-            <Text style={styles.sectionTitle}>Basic information</Text>
+  return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <Screen>
+      <AppHeader title={mustComplete ? 'Complete your profile' : 'Edit profile'} back={!mustComplete} />
 
-            {/* Subtle loading indicator while profile data fetches */}
-            {profileLoading && (
-              <View style={styles.fetchingRow}>
-                <ActivityIndicator size="small" color={Palette.gold} />
-                <Text style={styles.fetchingText}>Loading your details…</Text>
-              </View>
-            )}
+      {mustComplete ? <Notice tone="info">Please add your phone number and date of birth to continue.</Notice> : null}
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Full name</Text>
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                autoComplete="name"
-                returnKeyType="next"
-                placeholder="Your full name"
-                placeholderTextColor={Palette.stoneLight}
-                maxLength={100}
-              />
-            </View>
+      <Card style={styles.photoCard}>
+        <Pressable onPress={photoOptions} accessibilityRole="button" accessibilityLabel="Change profile photo">
+          <Avatar name={name || user?.email} size={96} />
+          <View style={styles.cameraBadge}><Ionicons name="camera" size={16} color={Palette.onAccent} /></View>
+        </Pressable>
+        <Text style={styles.name}>{name || 'Your name'}</Text>
+        <Text style={ui.small}>{user?.email}</Text>
+        {age !== null ? <Text style={ui.small}>{age} years old</Text> : null}
+        <Text style={styles.photoHint}>The photo is stored on this device only.</Text>
+        {photoError ? <Notice tone="error">{photoError}</Notice> : null}
+      </Card>
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Email address</Text>
-              <TextInput
-                style={[styles.input, styles.inputDisabled]}
-                value={user?.email ?? ''}
-                editable={false}
-                selectTextOnFocus={false}
-              />
-              <Text style={[ui.small, { marginTop: 4 }]}>Email cannot be changed.</Text>
-            </View>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Phone number</Text>
-              <TextInput
-                style={styles.input}
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-                autoComplete="tel"
-                placeholder="Include country code if needed"
-                placeholderTextColor={Palette.stoneLight}
-              />
-            </View>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Date of birth</Text>
-              <TextInput
-                style={styles.input}
-                value={dob}
-                onChangeText={setDob}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={Palette.stoneLight}
-                keyboardType="numeric"
-                maxLength={10}
-              />
-              <Text style={[ui.small, { marginTop: 4 }]}>
-                Your age is calculated from this date.
-              </Text>
-            </View>
-
-            {error !== '' && (
-              <View style={styles.errorBox}>
-                <Ionicons name="alert-circle-outline" size={15} color={Palette.danger} />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-
-            <Pressable
-              style={[styles.saveBtn, (saving || profileLoading) && styles.saveBtnDisabled]}
-              onPress={handleSave}
-              disabled={saving || profileLoading}
-            >
-              {saving ? (
-                <ActivityIndicator color={Palette.surface} />
-              ) : (
-                <Text style={styles.saveBtnText}>Save profile</Text>
-              )}
-            </Pressable>
-          </Card>
-        </Screen>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  );
+      <Card>
+        <Eyebrow>PERSONAL DETAILS</Eyebrow>
+        {loading ? <Loading label="Loading your details…" /> : <>
+          <Field label="Full name" value={name} onChangeText={setName} autoComplete="name" placeholder="Your full name" maxLength={120} />
+          <Field label="Email" value={user?.email ?? ''} editable={false} hint="Email can't be changed." />
+          <Field label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" autoComplete="tel" placeholder="+91 98765 43210" />
+          <DateField label="Date of birth" value={dob} onChange={setDob} maximumDate={new Date()} placeholder="Choose your date of birth" />
+        </>}
+        {error ? <Notice tone="error">{error}</Notice> : null}
+        <ActionButton label="Save changes" onPress={save} loading={saving} disabled={loading} />
+        {mustComplete ? <ActionButton variant="quiet" label="Sign out" onPress={signOut} /> : null}
+      </Card>
+    </Screen>
+  </KeyboardAvoidingView>;
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Palette.ivory },
-
-  headerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  avatarCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: Palette.goldSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: Palette.gold,
-    flexShrink: 0,
-  },
-  avatarInitials: {
-    color: Palette.goldDark,
-    fontFamily: 'serif',
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  headerName: {
-    color: Palette.charcoal,
-    fontFamily: 'serif',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  ageBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: Palette.goldSoft,
-    borderRadius: 20,
-    paddingHorizontal: 9,
-    paddingVertical: 2,
-    marginTop: 2,
-  },
-  ageBadgeText: { color: Palette.goldDark, fontSize: 11, fontWeight: '700' },
-
-  formCard: { gap: 16 },
-  sectionEyebrow: {
-    color: Palette.goldDark,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  sectionTitle: {
-    color: Palette.charcoal,
-    fontFamily: 'serif',
-    fontSize: 20,
-    fontWeight: '700',
-    marginTop: -8,
-  },
-
-  fetchingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: Palette.goldSoft,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  fetchingText: { color: Palette.goldDark, fontSize: 13, fontWeight: '600' },
-
-  fieldGroup: { gap: 6 },
-  fieldLabel: { color: Palette.charcoal, fontSize: 14, fontWeight: '700' },
-  input: {
-    backgroundColor: Palette.ivory,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Palette.line,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    color: Palette.charcoal,
-    fontSize: 15,
-  },
-  inputDisabled: { color: Palette.stone, backgroundColor: '#F5F4F0' },
-
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    backgroundColor: '#FEF2F2',
-    borderRadius: 10,
-    padding: 10,
-  },
-  errorText: { color: Palette.danger, fontSize: 13, flex: 1 },
-
-  noticeBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    backgroundColor: '#D1FAE5',
-    borderRadius: 10,
-    padding: 10,
-  },
-  noticeText: { color: '#065F46', fontSize: 13, fontWeight: '700', flex: 1 },
-
-  saveBtn: {
-    backgroundColor: Palette.charcoal,
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { color: Palette.surface, fontSize: 15, fontWeight: '700' },
+  photoCard: { alignItems: 'center', gap: 6 },
+  cameraBadge: { position: 'absolute', right: 0, bottom: 0, width: 32, height: 32, borderRadius: 16, backgroundColor: Palette.gold, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Palette.surface },
+  name: { fontFamily: BrandFonts.heading, fontSize: 22, color: Palette.charcoal, marginTop: 8 },
+  photoHint: { fontFamily: BrandFonts.body, fontSize: 12, color: Palette.stoneLight },
 });

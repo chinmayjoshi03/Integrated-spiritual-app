@@ -1,44 +1,27 @@
-import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader, Card, Screen } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import { BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
-import {
-  type ShopItem,
-  apiAddToCart,
-  apiGetShopItemDetail,
-  apiPurchaseShopItem,
-} from '@/services/api';
-
-const CATEGORY_META: Record<string, { emoji: string; color: string; tagBg: string }> = {
-  Malas:           { emoji: '\uD83D\uDCFF', color: '#7C3AED', tagBg: '#EDE9FE' },
-  Incense:         { emoji: '\uD83C\uDF3F', color: '#059669', tagBg: '#D1FAE5' },
-  Crystals:        { emoji: '\uD83D\uDC8E', color: '#0EA5E9', tagBg: '#E0F2FE' },
-  Texts:           { emoji: '\uD83D\uDCD6', color: '#D97706', tagBg: '#FEF3C7' },
-  'Ritual Tools':  { emoji: '\uD83D\uDD14', color: '#C9A24D', tagBg: '#F1E3BE' },
-  Apparel:         { emoji: '\uD83E\uDDD8', color: '#E11D48', tagBg: '#FFE4E6' },
-};
-
-function getItemMeta(category: string) {
-  return CATEGORY_META[category] ?? { emoji: '\u2728', color: '#C9A24D', tagBg: '#F1E3BE' };
-}
+import { type ShopItem, apiAddToCart, apiGetProductBookmarkStatus, apiGetShopItemDetail, apiToggleBookmark } from '@/services/api';
 
 function formatPrice(price: string | number, currency: string, qty = 1): string {
   const num = parseFloat(String(price)) * qty;
-  if (currency === 'INR') return '\u20b9' + num.toLocaleString('en-IN');
+  if (currency === 'INR') return '₹' + num.toLocaleString('en-IN');
   return '$' + num.toFixed(2);
 }
 
@@ -49,10 +32,10 @@ export default function ShopItemDetailScreen() {
   const [item, setItem] = useState<ShopItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
-  const [address, setAddress] = useState('');
-  const [purchasing, setPurchasing] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
-  const [cartNotice, setCartNotice] = useState('');
+  const [addedToCart, setAddedToCart] = useState(false);
+  const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarkBusy, setBookmarkBusy] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -62,8 +45,20 @@ export default function ShopItemDetailScreen() {
         if (res.data) setItem(res.data.item);
         setLoading(false);
       });
+      apiGetProductBookmarkStatus(session, parseInt(itemId, 10)).then((res) => {
+        setBookmarked(Boolean(res.data?.bookmarked));
+      });
     }, [session, itemId])
   );
+
+  const toggleBookmark = async () => {
+    if (!session || !item || bookmarkBusy) return;
+    setBookmarkBusy(true);
+    const res = await apiToggleBookmark(session, 'product', item.id);
+    setBookmarkBusy(false);
+    if (res.error) Alert.alert('Could not update saved items', res.error);
+    else setBookmarked(Boolean(res.data?.bookmarked));
+  };
 
   const handleAddToCart = async () => {
     if (!session || !item) return;
@@ -71,47 +66,19 @@ export default function ShopItemDetailScreen() {
     const res = await apiAddToCart(session, item.id, quantity);
     setAddingToCart(false);
     if (res.error) {
-      Alert.alert('Error', res.error);
+      Alert.alert('Could not add to cart', res.error);
     } else {
-      setCartNotice('Added to cart!');
-      setTimeout(() => setCartNotice(''), 2500);
+      setAddedToCart(true);
     }
-  };
-
-  const handlePurchase = async () => {
-    if (!session || !item) return;
-    if (!address.trim()) {
-      Alert.alert('Address Required', 'Please enter your shipping address to continue.');
-      return;
-    }
-    if (quantity > item.stock_quantity) {
-      Alert.alert('Insufficient Stock', `Only ${item.stock_quantity} units are available.`);
-      return;
-    }
-    setPurchasing(true);
-    const res = await apiPurchaseShopItem(session, item.id, quantity, address.trim());
-    setPurchasing(false);
-    if (res.error) {
-      Alert.alert('Order Failed', res.error);
-      return;
-    }
-    Alert.alert(
-      'Order Placed!',
-      `Your order for "${item.title}" is confirmed. May it serve your spiritual journey.`,
-      [
-        { text: 'View Orders', onPress: () => router.replace('/shop/orders' as any) },
-        { text: 'Continue Shopping', onPress: () => router.back() },
-      ]
-    );
   };
 
   if (loading) {
     return (
       <SafeAreaView style={styles.safe}>
         <Screen>
-          <AppHeader title="Sacred Item" back />
+          <AppHeader title="Item" back />
           <View style={styles.loadingWrap}>
-            <ActivityIndicator color="#C9A24D" size="large" />
+            <ActivityIndicator color={Palette.gold} size="large" />
           </View>
         </Screen>
       </SafeAreaView>
@@ -122,9 +89,9 @@ export default function ShopItemDetailScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <Screen>
-          <AppHeader title="Sacred Item" back />
+          <AppHeader title="Item" back />
           <Card style={styles.errorCard}>
-            <Text style={styles.errorIcon}>🛕</Text>
+            <MaterialCommunityIcons name="package-variant-closed" size={44} color={Palette.stoneLight} />
             <Text style={styles.errorTitle}>Item not found</Text>
           </Card>
         </Screen>
@@ -132,198 +99,211 @@ export default function ShopItemDetailScreen() {
     );
   }
 
-  const meta = getItemMeta(item.category);
   const outOfStock = item.stock_quantity === 0;
 
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <Screen>
-          <AppHeader title={item.category} subtitle="Sacred Item" back />
+      <Screen>
+        <AppHeader
+          title={item.category}
+          subtitle="Shop"
+          back
+          action={
+            <Pressable onPress={toggleBookmark} style={styles.bookmarkBtn} disabled={bookmarkBusy} accessibilityRole="button" accessibilityLabel={bookmarked ? 'Remove from saved items' : 'Save for later'}>
+              <Ionicons name={bookmarked ? 'bookmark' : 'bookmark-outline'} size={20} color={Palette.goldDark} />
+            </Pressable>
+          }
+        />
 
-          <View style={[styles.artBanner, { backgroundColor: meta.color + '18' }]}>
-            <Text style={styles.artEmoji}>{meta.emoji}</Text>
-            {item.is_featured && (
-              <View style={styles.featuredBadge}>
-                <Text style={styles.featuredBadgeText}>FEATURED</Text>
-              </View>
-            )}
-            {outOfStock && (
-              <View style={styles.soldOutBadge}>
-                <Text style={styles.soldOutText}>SOLD OUT</Text>
-              </View>
-            )}
+        {/* Product gallery or no-image placeholder */}
+        {item.images.length > 0 ? (
+          <Gallery images={item.images} />
+        ) : (
+          <View style={styles.noImageBanner}>
+            <MaterialCommunityIcons name="package-variant-closed" size={56} color={Palette.stoneLight} />
+            <Text style={styles.noImageText}>Image not available</Text>
+          </View>
+        )}
+
+        {/* Info card */}
+        <Card style={styles.infoCard}>
+          <Text style={styles.categoryEyebrow}>{item.category.toUpperCase()}</Text>
+          <Text style={styles.itemTitle}>{item.title}</Text>
+          <Text style={styles.itemDesc}>{item.description}</Text>
+
+          <View style={styles.priceRow}>
+            <Text style={styles.priceLabel}>Price</Text>
+            <Text style={styles.priceValue}>{formatPrice(item.price, item.currency)}</Text>
           </View>
 
-          <Card style={styles.infoCard}>
-            <View style={[styles.catBadge, { backgroundColor: meta.tagBg }]}>
-              <Text style={[styles.catBadgeText, { color: meta.color }]}>
-                {item.category.toUpperCase()}
-              </Text>
-            </View>
-            <Text style={styles.itemTitle}>{item.title}</Text>
-            <Text style={styles.itemDesc}>{item.description}</Text>
-            <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Price per unit</Text>
-              <Text style={styles.priceValue}>{formatPrice(item.price, item.currency)}</Text>
-            </View>
-            <Text style={styles.stockLabel}>
+          <View style={styles.stockRow}>
+            <Ionicons
+              name={outOfStock ? 'close-circle-outline' : 'checkmark-circle-outline'}
+              size={15}
+              color={outOfStock ? Palette.danger : Palette.success}
+            />
+            <Text style={[styles.stockText, outOfStock && styles.stockTextOut]}>
               {outOfStock ? 'Out of stock' : `${item.stock_quantity} in stock`}
             </Text>
-          </Card>
+          </View>
+        </Card>
 
-          {!outOfStock && (
-            <Card style={styles.checkoutCard}>
-              <Text style={styles.checkoutTitle}>Place Your Order</Text>
+        {/* Add to cart card */}
+        {!outOfStock && (
+          <Card style={styles.checkoutCard}>
+            {/* Quantity selector */}
+            <View style={styles.qtyRow}>
+              <Text style={styles.fieldLabel}>Quantity</Text>
+              <View style={styles.qtyControls}>
+                <Pressable
+                  style={[styles.qtyBtn, quantity <= 1 && styles.qtyBtnDisabled]}
+                  onPress={() => setQuantity((q) => Math.max(1, q - 1))}
+                  disabled={quantity <= 1}
+                >
+                  <Text style={styles.qtyBtnText}>−</Text>
+                </Pressable>
+                <Text style={styles.qtyValue}>{quantity}</Text>
+                <Pressable
+                  style={[styles.qtyBtn, quantity >= item.stock_quantity && styles.qtyBtnDisabled]}
+                  onPress={() => setQuantity((q) => Math.min(item.stock_quantity, q + 1))}
+                  disabled={quantity >= item.stock_quantity}
+                >
+                  <Text style={styles.qtyBtnText}>+</Text>
+                </Pressable>
+              </View>
+            </View>
 
-              {cartNotice !== '' && (
-                <Text style={{ color: '#065F46', fontWeight: '700', fontSize: 13 }}>✓ {cartNotice}</Text>
-              )}
+            {/* Total */}
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalValue}>{formatPrice(item.price, item.currency, quantity)}</Text>
+            </View>
 
-              {/* Add to cart button */}
+            {/* Add to cart */}
+            {addedToCart ? (
+              <View style={styles.addedRow}>
+                <Ionicons name="checkmark-circle" size={20} color="#059669" />
+                <Text style={styles.addedText}>Added to cart!</Text>
+              </View>
+            ) : (
               <Pressable
-                style={[styles.addToCartBtn, addingToCart && styles.buyBtnDisabled]}
+                style={[styles.addToCartBtn, addingToCart && styles.btnDisabled]}
                 onPress={handleAddToCart}
                 disabled={addingToCart}
               >
                 {addingToCart ? (
                   <ActivityIndicator color={Palette.goldDark} size="small" />
                 ) : (
-                  <Text style={styles.addToCartBtnText}>🛒 Add to Cart</Text>
+                  <>
+                    <Ionicons name="cart-outline" size={18} color={Palette.goldDark} />
+                    <Text style={styles.addToCartBtnText}>Add to Cart</Text>
+                  </>
                 )}
               </Pressable>
+            )}
 
-              <Pressable
-                style={styles.viewCartBtn}
-                onPress={() => router.push('/shop/cart' as any)}
-              >
-                <Text style={styles.viewCartBtnText}>View Cart →</Text>
-              </Pressable>
-
-              <View style={styles.qtyRow}>
-                <Text style={styles.fieldLabel}>Quantity</Text>
-                <View style={styles.qtyControls}>
-                  <Pressable style={styles.qtyBtn} onPress={() => setQuantity((q) => Math.max(1, q - 1))}>
-                    <Text style={styles.qtyBtnText}>-</Text>
-                  </Pressable>
-                  <Text style={styles.qtyValue}>{quantity}</Text>
-                  <Pressable style={styles.qtyBtn} onPress={() => setQuantity((q) => Math.min(item.stock_quantity, q + 1))}>
-                    <Text style={styles.qtyBtnText}>+</Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              <View style={styles.addressWrap}>
-                <Text style={styles.fieldLabel}>Shipping Address</Text>
-                <TextInput
-                  style={styles.addressInput}
-                  placeholder="Enter your full delivery address..."
-                  placeholderTextColor="#A79E8B"
-                  value={address}
-                  onChangeText={setAddress}
-                  multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
-                />
-              </View>
-
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total</Text>
-                <Text style={styles.totalValue}>{formatPrice(item.price, item.currency, quantity)}</Text>
-              </View>
-
-              <Pressable
-                style={[styles.buyBtn, purchasing && styles.buyBtnDisabled]}
-                onPress={handlePurchase}
-                disabled={purchasing}
-              >
-                {purchasing ? (
-                  <ActivityIndicator color="#FFF" size="small" />
-                ) : (
-                  <Text style={styles.buyBtnText}>Place Sacred Order</Text>
-                )}
-              </Pressable>
-            </Card>
-          )}
-        </Screen>
-      </KeyboardAvoidingView>
+            {/* Go to cart */}
+            <Pressable style={styles.viewCartBtn} onPress={() => router.push('/shop/cart' as any)}>
+              <Text style={styles.viewCartBtnText}>View cart</Text>
+            </Pressable>
+          </Card>
+        )}
+      </Screen>
     </SafeAreaView>
   );
 }
 
+function Gallery({ images }: { images: string[] }) {
+  const { width } = useWindowDimensions();
+  const slideWidth = Math.min(width, 760) - 32;
+  const [index, setIndex] = useState(0);
+  const scroller = useRef<ScrollView>(null);
+  const go = (i: number) => { setIndex(i); scroller.current?.scrollTo({ x: i * slideWidth, animated: true }); };
+  return <View style={{ gap: 10 }}>
+    <ScrollView
+      ref={scroller}
+      horizontal
+      pagingEnabled
+      showsHorizontalScrollIndicator={false}
+      onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / slideWidth))}
+      style={{ borderRadius: 20 }}
+    >
+      {images.map((uri) => <Image key={uri} source={{ uri }} style={[styles.productImage, { width: slideWidth, marginBottom: 0 }]} contentFit="cover" />)}
+    </ScrollView>
+    {images.length > 1 ? (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        {images.map((uri, i) => <Pressable key={uri} onPress={() => go(i)} accessibilityRole="button" accessibilityLabel={`Image ${i + 1}`}>
+          <Image source={{ uri }} style={[styles.thumb, i === index && styles.thumbActive]} contentFit="cover" />
+        </Pressable>)}
+      </ScrollView>
+    ) : null}
+  </View>;
+}
+
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F5ED' },
+  bookmarkBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Palette.goldSoft, alignItems: 'center', justifyContent: 'center' },
+  thumb: { width: 60, height: 60, borderRadius: 12, borderWidth: 2, borderColor: 'transparent' },
+  thumbActive: { borderColor: Palette.gold },
+  safe: { flex: 1, backgroundColor: Palette.ivory },
   loadingWrap: { paddingVertical: 60, alignItems: 'center' },
-  artBanner: {
-    height: 200, borderRadius: 24, alignItems: 'center', justifyContent: 'center',
-    marginBottom: 16, position: 'relative', overflow: 'hidden',
+
+  productImage: { width: '100%', height: 240, borderRadius: 20, marginBottom: 16 },
+  noImageBanner: {
+    width: '100%', height: 200, borderRadius: 20, marginBottom: 16,
+    backgroundColor: Palette.goldSoft, alignItems: 'center', justifyContent: 'center', gap: 8,
   },
-  artEmoji: { fontSize: 88 },
-  featuredBadge: {
-    position: 'absolute', top: 14, left: 14, backgroundColor: '#A77A1C',
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12,
-  },
-  featuredBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
-  soldOutBadge: {
-    position: 'absolute', bottom: 14, right: 14, backgroundColor: '#8B3B31CC',
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 12,
-  },
-  soldOutText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
+  noImageText: { color: Palette.stoneLight, fontSize: 13, fontWeight: '600' },
+
   infoCard: { gap: 10, marginBottom: 14 },
-  catBadge: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 },
-  catBadgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
-  itemTitle: { color: '#252525', fontFamily: 'serif', fontSize: 22, fontWeight: '700', lineHeight: 28 },
-  itemDesc: { color: '#6F6B63', fontSize: 14, lineHeight: 22 },
+  categoryEyebrow: { color: Palette.goldDark, fontSize: 10, fontWeight: '800', letterSpacing: 0.6 },
+  itemTitle: { color: Palette.charcoal, fontFamily: BrandFonts.heading, fontSize: 22, lineHeight: 28 },
+  itemDesc: { color: Palette.stone, fontSize: 14, lineHeight: 22 },
   priceRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E8D8AE',
+    paddingTop: 10, borderTopWidth: 1, borderTopColor: Palette.line,
   },
-  priceLabel: { color: '#6F6B63', fontSize: 14, fontWeight: '600' },
-  priceValue: { color: '#A77A1C', fontFamily: 'serif', fontSize: 24, fontWeight: '800' },
-  stockLabel: { color: '#6F6B63', fontSize: 13, fontWeight: '600' },
-  checkoutCard: { gap: 16, marginBottom: 100 },
-  checkoutTitle: { color: '#252525', fontFamily: 'serif', fontSize: 18, fontWeight: '700' },
+  priceLabel: { color: Palette.stone, fontSize: 14, fontWeight: '600' },
+  priceValue: { color: Palette.goldDark, fontFamily: BrandFonts.heading, fontSize: 24 },
+  stockRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stockText: { color: '#059669', fontSize: 13, fontWeight: '600' },
+  stockTextOut: { color: Palette.danger },
+
+  checkoutCard: { gap: 16, marginBottom: 40 },
   qtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  fieldLabel: { color: '#252525', fontSize: 14, fontWeight: '700' },
+  fieldLabel: { color: Palette.charcoal, fontSize: 14, fontWeight: '700' },
   qtyControls: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   qtyBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1E3BE',
-    borderWidth: 1, borderColor: '#E8D8AE', alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 18, backgroundColor: Palette.goldSoft,
+    borderWidth: 1, borderColor: Palette.gold, alignItems: 'center', justifyContent: 'center',
   },
-  qtyBtnText: { color: '#A77A1C', fontSize: 18, fontWeight: '700' },
-  qtyValue: { color: '#252525', fontSize: 18, fontWeight: '700', minWidth: 24, textAlign: 'center' },
-  addressWrap: { gap: 8 },
-  addressInput: {
-    borderWidth: 1, borderColor: '#E8D8AE', borderRadius: 14, padding: 12,
-    color: '#252525', fontSize: 14, minHeight: 80, backgroundColor: '#FFFFFF',
-  },
+  qtyBtnDisabled: { opacity: 0.4 },
+  qtyBtnText: { color: Palette.goldDark, fontSize: 18, fontWeight: '700' },
+  qtyValue: { color: Palette.charcoal, fontSize: 18, fontWeight: '700', minWidth: 24, textAlign: 'center' },
+
   totalRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#F1E3BE', padding: 14, borderRadius: 14,
+    backgroundColor: Palette.goldSoft, padding: 14, borderRadius: 14,
   },
-  totalLabel: { color: '#6F6B63', fontSize: 15, fontWeight: '700' },
-  totalValue: { color: '#A77A1C', fontFamily: 'serif', fontSize: 22, fontWeight: '800' },
-  buyBtn: {
-    backgroundColor: '#A77A1C', paddingVertical: 16, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
+  totalLabel: { color: Palette.stone, fontSize: 15, fontWeight: '700' },
+  totalValue: { color: Palette.goldDark, fontFamily: BrandFonts.heading, fontSize: 22 },
+
+  addedRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#D1FAE5', borderRadius: 16, paddingVertical: 14,
   },
-  buyBtnDisabled: { opacity: 0.6 },
-  buyBtnText: { color: '#FFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
+  addedText: { color: '#065F46', fontSize: 15, fontWeight: '700' },
+
   addToCartBtn: {
-    backgroundColor: Palette.goldSoft,
-    borderWidth: 1,
-    borderColor: Palette.goldDark,
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: Palette.goldSoft, borderWidth: 1, borderColor: Palette.goldDark,
+    paddingVertical: 14, borderRadius: 16,
   },
   addToCartBtnText: { color: Palette.goldDark, fontSize: 15, fontWeight: '700' },
+  btnDisabled: { opacity: 0.6 },
+
   viewCartBtn: { alignSelf: 'center', paddingVertical: 4 },
   viewCartBtnText: { color: Palette.goldDark, fontSize: 13, fontWeight: '700' },
+
   errorCard: { alignItems: 'center', gap: 12, paddingVertical: 40 },
-  errorIcon: { fontSize: 48 },
-  errorTitle: { color: '#252525', fontFamily: 'serif', fontSize: 18, fontWeight: '700' },
+  errorTitle: { color: Palette.charcoal, fontFamily: BrandFonts.heading, fontSize: 18 },
 });

@@ -1,63 +1,58 @@
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 // ─── Backend endpoint ──────────────────────────────────────────────────────────
-// The app now shares the same backend as the website (spiritual-engineering-main).
-// Update LOCAL_IP to your machine's LAN address when testing on a physical device
-// via Expo Go (run: ipconfig getifaddr en0  on macOS).
-// The website backend runs on PORT 5001 by default.
+// The app shares the same backend as the website (port 5001). Resolution order:
+//   1. EXPO_PUBLIC_API_URL  — set this for APK builds (eas.json env or .env)
+//   2. Expo Go / dev build  — the laptop serving the JS bundle (follows Wi-Fi IP changes)
+//   3. LOCAL_IP fallback    — your Mac's LAN address (run: ipconfig getifaddr en0)
+const API_PORT = 5001;
 const LOCAL_IP = '10.238.18.190';
-export const BASE_URL = Platform.select({
-  android: `http://${LOCAL_IP}:5001`,
-  ios: `http://${LOCAL_IP}:5001`,
-  default: 'http://localhost:5001',
-});
 
-/**
- * Build the streaming URL for a lesson video.
- *
- * Dev: serves from backend/videos/<filename> via the local Express endpoint.
- *
- * When you move to Cloudflare Stream / Mux, replace this function body with:
- *   Cloudflare: `https://customer-<id>.cloudflarestream.com/${filename}/manifest/video.m3u8`
- *   Mux:        `https://stream.mux.com/${filename}.m3u8`
- *
- * The rest of the app needs no changes — it just uses the URL this returns.
- */
-export function getVideoUrl(filename: string, token: string): string {
-  return `${BASE_URL}/api/video/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
-}
+function resolveBaseUrl(): string {
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
 
-/**
- * Build the URL to download or view a course resource / PDF.
- *
- * If filename is already a full URL (http:// or https://), returns it directly.
- * Otherwise, builds the dev endpoint URL pointing to backend/resources/<filename>.
- */
-export function getResourceUrl(filename: string, token: string): string {
-  if (filename.startsWith('http://') || filename.startsWith('https://')) {
-    return filename;
+  if (Platform.OS === 'web') return `http://localhost:${API_PORT}`;
+
+  // hostUri looks like "10.238.18.190:8081" when the bundle comes from Metro.
+  const devHost = Constants.expoConfig?.hostUri?.split(':')[0];
+  if (__DEV__ && devHost && devHost !== 'localhost' && devHost !== '127.0.0.1') {
+    return `http://${devHost}:${API_PORT}`;
   }
-  return `${BASE_URL}/api/resource/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
+  return `http://${LOCAL_IP}:${API_PORT}`;
 }
+
+export const BASE_URL = resolveBaseUrl();
 
 /**
- * Build the URL to stream a meditation audio file.
+ * Resolve a media URL returned by the backend (lesson / meditation content).
  *
- * Dev: serves from backend/audio/<filename> via local Express byte-range endpoint.
+ * The backend already returns signed, ready-to-play URLs such as
+ *   http://<BACKEND_URL>/api/courses/:id/lessons/:id/content?token=…
+ * Two cases still need fixing up on a phone:
+ *   • a relative path ("/api/…") when BACKEND_URL is not set on the server
+ *   • a "localhost" origin, which a physical device cannot reach
+ * In both cases we point the URL at this app's BASE_URL instead.
  */
-export function getAudioUrl(filename: string, token: string): string {
-  if (!filename) return '';
-  if (filename.startsWith('http://') || filename.startsWith('https://')) {
-    return filename;
-  }
-  return `${BASE_URL}/api/audio/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
+export function resolveMediaUrl(url: string | null | undefined): string {
+  if (!url) return '';
+  if (url.startsWith('/')) return `${BASE_URL}${url}`;
+  const match = url.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/.*)$/i);
+  if (match) return `${BASE_URL}${match[3]}`;
+  return url;
 }
 
-
+/** @deprecated kept for older screens — use resolveMediaUrl. */
+export function getAudioUrl(url: string, _token?: string): string {
+  return resolveMediaUrl(url);
+}
 
 type ApiResponse<T> = {
   data?: T;
   error?: string;
+  /** HTTP status code (0 when the request never reached the server). */
+  status?: number;
 };
 
 async function request<T>(
@@ -78,19 +73,19 @@ async function request<T>(
     });
     clearTimeout(timeoutId);
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      return { error: data.error || 'Something went wrong.' };
+      return { error: data?.error || 'Something went wrong.', status: response.status };
     }
 
-    return { data };
+    return { data, status: response.status };
   } catch (error: any) {
     console.error('API request error for', endpoint, error?.message || error);
     if (error?.name === 'AbortError') {
-      return { error: 'Request timed out. Please check your network and try again.' };
+      return { error: 'Request timed out. Please check your network and try again.', status: 0 };
     }
-    return { error: 'Network error. Could not connect to the backend server.' };
+    return { error: 'Network error. Could not connect to the backend server.', status: 0 };
   }
 }
 
@@ -101,14 +96,21 @@ export type User = {
   name: string | null;
   email: string;
   role: string;
+  userCategory?: 'normal' | 'dikshan';
+  user_category?: 'normal' | 'dikshan';
+  phoneNumber?: string | null;
+  dateOfBirth?: string | null;
   profileComplete?: boolean;
   profile_picture_url?: string | null;
+  created_at?: string;
 };
 
 type AuthResponse = {
   message: string;
-  token: string;
-  user: User;
+  token?: string;
+  user?: User;
+  /** Set for administrator accounts — those sign in on the website only. */
+  requiresOtp?: boolean;
 };
 
 // Registration only returns email + message (OTP flow — no token yet)
@@ -119,8 +121,9 @@ type RegisterResponse = {
 
 type OtpVerifyResponse = {
   message: string;
-  token: string;
-  user: User;
+  /** Not returned by the current backend — the email is verified, then the user signs in. */
+  token?: string;
+  user?: User;
 };
 
 export async function apiLogin(email: string, password: string) {
@@ -135,10 +138,24 @@ export async function apiLogin(email: string, password: string) {
  * the user must verify it before they can log in.
  * Returns { message, email } — no token yet.
  */
-export async function apiSignup(name: string, email: string, password: string) {
+export async function apiSignup(payload: {
+  name: string;
+  email: string;
+  password: string;
+  phoneNumber: string;
+  dateOfBirth: string;
+}) {
   return request<RegisterResponse>('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ name, email, password }),
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Sends a password-reset link to the email (the link opens the website reset page). */
+export async function apiForgotPassword(email: string) {
+  return request<{ message: string }>('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
   });
 }
 
@@ -189,94 +206,27 @@ export type Lesson = {
   id: number;
   title: string;
   description: string | null;
-  // Backend columns
-  content_type: string | null;      // 'video' | 'pdf'
-  content_url: string | null;       // used by web; mobile maps to video_filename
+  content_type: string | null;      // 'video' | 'pdf' | 'audio'
+  /** Signed, ready-to-play URL returned by the backend (null when locked). */
+  content_url: string | null;
   position: number;
   duration_seconds: number | null;
-  // Computed / legacy aliases kept for the mobile screens
-  video_filename: string | null;    // mapped from content_url for video lessons
-  duration_sec: number;             // mapped from duration_seconds
-  sort_order: number;               // mapped from position
+  duration_sec: number;
+  sort_order: number;
+  /** Free preview lesson — playable before enrolling (website: is_free_preview). */
   is_free: boolean;
   completed: boolean;
   watched_sec: number;
-};
-
-export type Resource = {
-  id: number;
-  title: string;
-  description: string | null;
-  file_url: string | null;
-  file_type: string;
-  sort_order: number;
-};
-
-export type Assignment = {
-  id: number;
-  title: string;
-  description: string | null;
-  instructions: string | null;
-  due_offset_days: number;
-  sort_order: number;
-  submitted_at: string | null;
-  response_text: string | null;
-};
-
-export type QuizSummary = {
-  id: number;
-  title: string;
-  description: string | null;
-  sort_order: number;
-  best_score: number | null;
-  total_questions: number | null;
-  attempt_count: number;
-};
-
-export type QuizQuestion = {
-  id: number;
-  question: string;
-  options: string[];
-  sort_order: number;
-};
-
-export type QuizAttempt = {
-  id: number;
-  score: number;
-  total: number;
-  answers: number[];
-  attempted_at: string;
-};
-
-export type QuizFeedbackItem = {
-  question_id: number;
-  question: string;
-  options: string[];
-  selected_idx: number | null;
-  correct_idx: number;
-  is_correct: boolean;
-  explanation: string | null;
+  /** Live courses: per-lesson Meet link and session time. */
+  meet_link?: string | null;
+  scheduled_at?: string | null;
 };
 
 export type CourseDetail = {
   course: Course;
   lessons: Lesson[];
-  resources: Resource[];
-  assignments: Assignment[];
-  quizzes: QuizSummary[];
-};
-
-export type QuizDetail = {
-  quiz: { id: number; title: string; description: string | null };
-  questions: QuizQuestion[];
-  attempts: QuizAttempt[];
-};
-
-export type QuizResult = {
-  score: number;
-  total: number;
-  pct: number;
-  feedback: QuizFeedbackItem[];
+  /** True when the user has no full access (only free-preview lessons are playable). */
+  locked: boolean;
 };
 
 // ── LMS API ───────────────────────────────────────────────────────────────────
@@ -323,119 +273,83 @@ export async function apiGetCourses(token: string) {
 }
 
 export async function apiGetCourseDetail(token: string, courseId: number) {
-  // Fetch course and lessons in parallel; resources/assignments/quizzes not yet
-  // implemented in the backend so we return empty arrays for them.
-  const [courseRes, lessonsRes] = await Promise.all([
+  const [courseRes, lessonsRes, progressRes] = await Promise.all([
     request<{ course: Course }>(`/api/courses/${courseId}`, authHeader(token)),
     request<{ lessons: any[]; locked: boolean }>(`/api/courses/${courseId}/lessons`, authHeader(token)),
+    request<{ progress: { lesson_id: number; progress_seconds: number; completed: boolean }[] }>(
+      `/api/courses/${courseId}/lessons/progress`,
+      authHeader(token)
+    ),
   ]);
 
   if (courseRes.error || !courseRes.data) {
     return { error: courseRes.error ?? 'Course not found.' };
   }
 
-  // Normalise lesson shape to what the mobile screens expect
+  const progressById = new Map(
+    (progressRes.data?.progress ?? []).map((p) => [Number(p.lesson_id), p])
+  );
+
   const rawLessons: any[] = lessonsRes.data?.lessons ?? [];
-  const lessons: Lesson[] = rawLessons.map((l) => ({
-    id: l.id,
-    title: l.title,
-    description: l.description ?? null,
-    content_type: l.content_type ?? null,
-    content_url: l.content_url ?? null,
-    position: l.position ?? 0,
-    duration_seconds: l.duration_seconds ?? null,
-    // Legacy aliases
-    video_filename: l.content_type === 'video' ? (l.content_url ?? null) : null,
-    duration_sec: l.duration_seconds ?? 0,
-    sort_order: l.position ?? 0,
-    is_free: l.is_free ?? false,
-    completed: l.completed ?? false,
-    watched_sec: l.watched_sec ?? 0,
-  }));
+  const lessons: Lesson[] = rawLessons.map((l) => {
+    const progress = progressById.get(Number(l.id));
+    return {
+      id: l.id,
+      title: l.title,
+      description: l.description ?? null,
+      content_type: l.content_type ?? null,
+      content_url: l.content_url ?? null,
+      position: l.position ?? 0,
+      duration_seconds: l.duration_seconds ?? null,
+      duration_sec: l.duration_seconds ?? 0,
+      sort_order: l.position ?? 0,
+      is_free: Boolean(l.is_free_preview ?? l.is_free),
+      completed: progress?.completed ?? false,
+      watched_sec: progress?.progress_seconds ?? 0,
+      meet_link: l.meet_link ?? null,
+      scheduled_at: l.scheduled_at ?? null,
+    };
+  });
 
-  const detail: CourseDetail = {
-    course: courseRes.data.course,
-    lessons,
-    resources: [],
-    assignments: [],
-    quizzes: [],
-  };
-
-  return { data: detail };
+  return { data: { course: courseRes.data.course, lessons, locked: Boolean(lessonsRes.data?.locked) } as CourseDetail };
 }
 
+export async function apiGetMyEnrolledCourses(token: string) {
+  const res = await request<{ courses: Course[] }>('/api/enrollments/my-courses', authHeader(token));
+  if (res.error) return { error: res.error };
+  return { data: res.data?.courses ?? [] };
+}
+
+export async function apiGetEnrollmentStatus(token: string, courseId: number) {
+  return request<{ enrolled: boolean }>(`/api/enrollments/${courseId}/enrollment-status`, authHeader(token));
+}
+
+/** Save lesson progress — same contract as the website (PUT, camelCase body). */
 export async function apiMarkLessonProgress(
   token: string,
   courseId: number,
   lessonId: number,
   payload: { watched_sec: number; completed: boolean }
 ) {
-  return request<{ success: boolean }>(
+  return request<{ progress: any }>(
     `/api/courses/${courseId}/lessons/${lessonId}/progress`,
     {
-      method: 'POST',
-      body: JSON.stringify(payload),
+      method: 'PUT',
+      body: JSON.stringify({
+        progressSeconds: Math.max(0, Math.floor(payload.watched_sec)),
+        completed: payload.completed,
+      }),
       ...authHeader(token),
     }
   );
 }
 
-export async function apiSubmitAssignment(
-  token: string,
-  courseId: number,
-  assignmentId: number,
-  response_text: string
-) {
-  return request<{ success: boolean; submitted_at: string }>(
-    `/api/courses/${courseId}/assignments/${assignmentId}/submit`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ response_text }),
-      ...authHeader(token),
-    }
-  );
+export async function apiGetCourseBookmarkStatus(token: string, courseId: number) {
+  return request<{ bookmarked: boolean }>(`/api/bookmarks/course/${courseId}`, authHeader(token));
 }
 
-export async function apiGetQuiz(token: string, courseId: number, quizId: number) {
-  return request<QuizDetail>(
-    `/api/courses/${courseId}/quizzes/${quizId}`,
-    authHeader(token)
-  );
-}
-
-export async function apiSubmitQuiz(
-  token: string,
-  courseId: number,
-  quizId: number,
-  answers: number[]
-) {
-  return request<QuizResult>(
-    `/api/courses/${courseId}/quizzes/${quizId}/submit`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ answers }),
-      ...authHeader(token),
-    }
-  );
-}
-
-// ── Daily Tasks API ───────────────────────────────────────────────────────────
-
-export type DailyTask = {
-  id: number;
-  task_name: string;
-  completed: boolean;
-};
-
-export async function apiGetTodayTasks(token: string) {
-  return request<{ tasks: DailyTask[] }>('/api/tasks/today', authHeader(token));
-}
-
-export async function apiToggleTask(token: string, taskId: number) {
-  return request<{ task: DailyTask }>(`/api/tasks/${taskId}/toggle`, {
-    method: 'POST',
-    ...authHeader(token),
-  });
+export async function apiGetProductBookmarkStatus(token: string, productId: number) {
+  return request<{ bookmarked: boolean }>(`/api/bookmarks/product/${productId}`, authHeader(token));
 }
 
 // ── Meditations API ───────────────────────────────────────────────────────────
@@ -476,7 +390,7 @@ function normaliseMeditation(m: any, progress?: any): Meditation {
     audio_filename: m.media_url ?? '',
     media_type: m.media_type === 'video' ? 'video' : 'audio',
     duration_sec: m.duration_seconds ?? m.duration_sec ?? 0,
-    guide_name: m.creator_name ?? m.guide_name ?? 'Karma Vajra',
+    guide_name: m.creator_name ?? m.guide_name ?? 'The Karm Vajra',
     thumbnail_url: m.thumbnail_url ?? null,
     is_featured: m.is_featured ?? false,
     sort_order: m.sort_order ?? 0,
@@ -523,244 +437,278 @@ export async function apiSaveMeditationProgress(
 }
 
 // ── Community API ────────────────────────────────────────────────────────────
-// The backend uses a groups → questions → replies model.
-// The app maps: group = community forum, question = post, reply = comment.
-// Default group id = 1 (the main public group).
+// Same model as the website: communities (groups) → discussions (questions) →
+// answers (replies) → comments (nested replies with parent_id).
+// Users must join a community before they can ask in it.
 
-export type PostComment = {
+export type CommunityAuthor = {
   id: number;
-  post_id: number;
-  user_id: number;
-  author_name: string;
-  content: string;
-  created_at: string;
+  name: string;
+  role: 'user' | 'mentor' | 'admin';
 };
 
-export type CommunityPost = {
+export type CommunityGroup = {
   id: number;
-  user_id: number;
-  author_name: string;
+  name: string;
+  description: string | null;
+  category?: string | null;
+  banner_url?: string | null;
+  status?: 'active' | 'archived' | 'removed';
+  is_active?: boolean;
+  created_at: string;
+  member_count: number;
+  question_count?: number;
+  is_member: boolean;
+};
+
+export type CommunityQuestion = {
+  id: number;
+  group_id: number;
+  group_name?: string;
   title: string;
   content: string;
-  category: string;
-  likes_count: number;
-  liked_by_user: boolean;
-  comments_count: number;
   created_at: string;
+  reply_count: number;
+  author: CommunityAuthor;
 };
 
-function normaliseQuestion(q: any): CommunityPost {
-  return {
-    id: q.id,
-    user_id: q.user_id ?? q.userId ?? 0,
-    author_name: q.author_name ?? q.user_name ?? q.user?.name ?? 'Community member',
-    title: q.title ?? '',
-    content: q.content ?? q.question ?? '',
-    category: q.category ?? q.group_name ?? 'General',
-    likes_count: q.likes_count ?? q.vote_count ?? 0,
-    liked_by_user: q.liked_by_user ?? q.voted_by_user ?? false,
-    comments_count: q.reply_count ?? q.comments_count ?? 0,
-    created_at: q.created_at ?? '',
-  };
-}
+export type CommunityReply = {
+  id: number;
+  question_id: number;
+  parent_id?: number | null;
+  content: string;
+  created_at: string;
+  author: CommunityAuthor;
+  replies?: CommunityReply[];
+};
 
-function normaliseReply(r: any, postId: number): PostComment {
-  return {
-    id: r.id,
-    post_id: postId,
-    user_id: r.user_id ?? 0,
-    author_name: r.author_name ?? r.user_name ?? r.user?.name ?? 'Member',
-    content: r.content ?? r.reply ?? '',
-    created_at: r.created_at ?? '',
-  };
-}
+export type CommunityQuestionDetail = CommunityQuestion & {
+  group_name: string;
+  replies: CommunityReply[];
+};
 
-// GET /api/community/questions — recent questions across all groups
-export async function apiGetPosts(token: string, _category?: string) {
-  const res = await request<any>('/api/community/questions', authHeader(token));
+const asArray = <T>(data: unknown): T[] => (Array.isArray(data) ? (data as T[]) : []);
+
+export async function apiGetCommunityGroups(token: string, query = '') {
+  const q = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
+  const res = await request<CommunityGroup[]>(`/api/community/groups${q}`, authHeader(token));
   if (res.error) return { error: res.error };
-  const raw: any[] = Array.isArray(res.data) ? res.data : (res.data?.questions ?? []);
-  return { data: { posts: raw.map(normaliseQuestion) } };
+  return { data: asArray<CommunityGroup>(res.data) };
 }
 
-// POST /api/community/groups/:groupId/questions
-// Fetches the first active group dynamically to avoid hardcoding an ID
-export async function apiCreatePost(token: string, title: string, content: string, _category: string = 'General') {
-  // Get groups and find first active one the user is a member of
-  const groupsRes = await request<any>('/api/community/groups', authHeader(token));
-  const groups: any[] = Array.isArray(groupsRes.data)
-    ? groupsRes.data
-    : (groupsRes.data?.groups ?? []);
-  // Prefer active groups the user has joined; fall back to any active group
-  const activeGroup =
-    groups.find((g) => g.status === 'active' && g.is_member) ??
-    groups.find((g) => g.status === 'active');
+export async function apiGetCommunityGroup(token: string, groupId: number) {
+  return request<CommunityGroup>(`/api/community/groups/${groupId}`, authHeader(token));
+}
 
-  if (!activeGroup) return { error: 'No active community group available.' };
+export async function apiJoinCommunityGroup(token: string, groupId: number) {
+  return request<{ message: string }>(`/api/community/groups/${groupId}/join`, {
+    method: 'POST',
+    ...authHeader(token),
+  });
+}
 
-  // Auto-join if not already a member (so new users can post immediately)
-  if (!activeGroup.is_member) {
-    await request<any>(`/api/community/groups/${activeGroup.id}/join`, {
+export async function apiLeaveCommunityGroup(token: string, groupId: number) {
+  return request<{ message: string }>(`/api/community/groups/${groupId}/leave`, {
+    method: 'DELETE',
+    ...authHeader(token),
+  });
+}
+
+export async function apiGetGroupQuestions(token: string, groupId: number) {
+  const res = await request<CommunityQuestion[]>(`/api/community/groups/${groupId}/questions`, authHeader(token));
+  if (res.error) return { error: res.error };
+  return { data: asArray<CommunityQuestion>(res.data) };
+}
+
+export async function apiAskGroupQuestion(token: string, groupId: number, title: string, content: string) {
+  return request<{ message: string; question: CommunityQuestion }>(
+    `/api/community/groups/${groupId}/questions`,
+    { method: 'POST', body: JSON.stringify({ title, content }), ...authHeader(token) }
+  );
+}
+
+export async function apiGetRecentQuestions(token: string) {
+  const res = await request<CommunityQuestion[]>('/api/community/questions', authHeader(token));
+  if (res.error) return { error: res.error };
+  return { data: asArray<CommunityQuestion>(res.data) };
+}
+
+export async function apiGetQuestion(token: string, questionId: number) {
+  return request<CommunityQuestionDetail>(`/api/community/questions/${questionId}`, authHeader(token));
+}
+
+export async function apiReplyToQuestion(token: string, questionId: number, content: string, parentId?: number) {
+  return request<{ message: string; reply: CommunityReply }>(
+    `/api/community/questions/${questionId}/replies`,
+    {
       method: 'POST',
+      body: JSON.stringify(parentId ? { content, parent_id: parentId } : { content }),
       ...authHeader(token),
-    });
-  }
-
-  const res = await request<any>(`/api/community/groups/${activeGroup.id}/questions`, {
-    method: 'POST',
-    body: JSON.stringify({ title, content }),
-    ...authHeader(token),
-  });
-  if (res.error) return { error: res.error };
-  const q = res.data?.question ?? res.data;
-  return { data: { post: normaliseQuestion(q) } };
-}
-
-// No delete on questions from backend — return a soft error
-export async function apiDeletePost(_token: string, _postId: number) {
-  return { error: 'Deleting posts is not available.' };
-}
-
-// GET /api/community/questions/:id
-export async function apiGetPostDetail(token: string, postId: number) {
-  const res = await request<any>(`/api/community/questions/${postId}`, authHeader(token));
-  if (res.error) return { error: res.error };
-  const raw = res.data?.question ?? res.data;
-  const repliesRaw: any[] = res.data?.replies ?? [];
-  return {
-    data: {
-      post: normaliseQuestion(raw),
-      comments: repliesRaw.map((r) => normaliseReply(r, postId)),
-    },
-  };
-}
-
-// No server-side like on questions — optimistic only, no-op API call
-export async function apiToggleLikePost(_token: string, _postId: number) {
-  return { data: { liked: true, likes_count: 0 } };
-}
-
-// POST /api/community/questions/:id/replies
-export async function apiAddComment(token: string, postId: number, content: string) {
-  const res = await request<any>(`/api/community/questions/${postId}/replies`, {
-    method: 'POST',
-    body: JSON.stringify({ content }),
-    ...authHeader(token),
-  });
-  if (res.error) return { error: res.error };
-  const r = res.data?.reply ?? res.data;
-  return { data: { comment: normaliseReply(r, postId) } };
+    }
+  );
 }
 
 // ── Events API ───────────────────────────────────────────────────────────────
+// Field names match the backend / website exactly.
 
 export type EventItem = {
   id: number;
   title: string;
-  description: string;
+  description: string | null;
+  banner_url: string | null;
+  event_type: 'online' | 'offline';
   event_date: string;
-  time_str: string;
-  location: string;
-  is_online: boolean;
-  meeting_link?: string;
-  banner_url?: string;
-  attendees_count: number;
-  registered_by_user: boolean;
-  // Additional fields from backend
-  duration_minutes?: number;
-  capacity?: number | null;
-  fee?: number;
-  status?: string;
+  start_time: string;
+  duration_minutes: number;
+  location: string | null;
+  meeting_url: string | null;
+  capacity: number | null;
+  fee: number;
+  status: 'draft' | 'published' | 'cancelled';
+  created_by_name?: string;
+  registered_count?: number;
+  is_registered?: boolean;
+  registered_at?: string;
+  attendance_status?: 'present' | 'absent' | null;
+  certificate_status?: 'available' | 'pending' | 'not_available' | null;
+  certificate_number?: string | null;
 };
 
-// Normalise a raw backend event row to the EventItem shape the screens use
-function normaliseEvent(e: any): EventItem {
-  return {
-    id: e.id,
-    title: e.title,
-    description: e.description ?? '',
-    event_date: e.event_date ?? '',
-    time_str: e.start_time ?? e.time_str ?? '',
-    location: e.location ?? '',
-    is_online: e.event_type === 'online' || e.is_online === true,
-    meeting_link: e.meeting_url ?? e.meeting_link ?? undefined,
-    banner_url: e.banner_url ?? undefined,
-    attendees_count: e.registered_count ?? e.attendees_count ?? 0,
-    registered_by_user: e.registered_by_user ?? false,
-    duration_minutes: e.duration_minutes ?? undefined,
-    capacity: e.capacity ?? null,
-    fee: e.fee ?? 0,
-    status: e.status ?? undefined,
-  };
-}
+export type EventCertificate = {
+  certificate_number: string;
+  issued_at: string;
+  participant_name: string;
+  event_title: string;
+  event_date: string;
+};
 
 export async function apiGetEvents(token: string) {
-  // Backend returns a plain array, not { events: [] }
-  const res = await request<any>('/api/events', authHeader(token));
+  const res = await request<EventItem[]>('/api/events', authHeader(token));
   if (res.error) return { error: res.error };
-  const raw = Array.isArray(res.data) ? res.data : (res.data?.events ?? []);
-  return { data: { events: raw.map(normaliseEvent) } };
+  return { data: asArray<EventItem>(res.data) };
+}
+
+export async function apiGetMyEvents(token: string) {
+  const res = await request<EventItem[]>('/api/events/my-events', authHeader(token));
+  if (res.error) return { error: res.error };
+  return { data: asArray<EventItem>(res.data) };
 }
 
 export async function apiGetEventDetail(token: string, eventId: number) {
-  const res = await request<any>(`/api/events/${eventId}`, authHeader(token));
-  if (res.error) return { error: res.error };
-  const raw = res.data?.event ?? res.data;
-  return { data: { event: normaliseEvent(raw) } };
+  return request<EventItem>(`/api/events/${eventId}`, authHeader(token));
 }
 
-export async function apiToggleRegisterEvent(token: string, eventId: number) {
-  return request<{ registered: boolean; attendees_count: number }>(`/api/events/${eventId}/register`, {
+export async function apiRegisterForEvent(token: string, eventId: number) {
+  return request<{ message: string }>(`/api/events/${eventId}/register`, {
     method: 'POST',
     ...authHeader(token),
   });
 }
 
-// ── Volunteering (Seva) API ──────────────────────────────────────────────────
+export async function apiJoinEventSession(token: string, eventId: number) {
+  return request<{ message: string; meeting_url: string }>(`/api/events/${eventId}/session/join`, {
+    method: 'POST',
+    ...authHeader(token),
+  });
+}
+
+export async function apiHeartbeatEventSession(token: string, eventId: number) {
+  return request<unknown>(`/api/events/${eventId}/session/heartbeat`, { method: 'POST', ...authHeader(token) });
+}
+
+export async function apiLeaveEventSession(token: string, eventId: number) {
+  return request<unknown>(`/api/events/${eventId}/session/leave`, { method: 'POST', ...authHeader(token) });
+}
+
+export async function apiGetMyEventCertificate(token: string, eventId: number) {
+  return request<EventCertificate>(`/api/events/${eventId}/certificates/me`, authHeader(token));
+}
+
+// ── Volunteering API ─────────────────────────────────────────────────────────
+
+export type VolunteerApplicationStatus = 'applied' | 'approved' | 'rejected' | 'cancelled' | 'completed';
 
 export type VolunteerOpportunity = {
   id: number;
   title: string;
   description: string;
-  category: string;
-  location: string;
-  required_volunteers: number;
-  current_volunteers: number;
-  applied_by_user: boolean;
-  application_status?: string;
-  created_at: string;
+  category: string | null;
+  banner_url: string | null;
+  volunteer_type: 'online' | 'offline';
+  event_date: string;
+  start_time: string;
+  end_time: string;
+  location: string | null;
+  meeting_url: string | null;
+  capacity: number | null;
+  requirements: string | null;
+  status: 'draft' | 'published' | 'closed' | 'completed' | 'cancelled';
+  occupied: number;
+  remaining: number | null;
+  is_full: boolean;
+  my_application?: { id: number; status: VolunteerApplicationStatus; applied_at: string } | null;
+  my_attendance?: { status: 'present' | 'absent' | 'partial'; duration_minutes: number } | null;
+  certificate_status?: 'available' | 'pending' | 'not_available';
+  certificate_number?: string | null;
+  // Present on /volunteering/my rows
+  application_id?: number;
+  application_status?: VolunteerApplicationStatus;
+  applied_at?: string;
+  attendance_status?: 'present' | 'absent' | 'partial' | null;
+  duration_minutes?: number | null;
 };
 
-function normaliseOpportunity(o: any): VolunteerOpportunity {
-  return {
-    id: o.id,
-    title: o.title ?? '',
-    description: o.description ?? '',
-    category: o.category ?? '',
-    location: o.location ?? '',
-    required_volunteers: o.capacity ?? o.required_volunteers ?? 0,
-    current_volunteers: o.occupied ?? o.current_volunteers ?? 0,
-    applied_by_user: o.my_application != null || o.applied_by_user === true,
-    application_status: o.my_application?.status ?? o.application_status ?? undefined,
-    created_at: o.created_at ?? '',
-  };
-}
+export type VolunteerCertificate = {
+  certificate_number: string;
+  issued_at: string;
+  opportunity_title: string;
+  opportunity_date: string;
+  participant_name: string;
+};
 
-// Backend mounts at /api/volunteering (not /api/volunteer)
-export async function apiGetVolunteerOpportunities(token: string) {
-  const res = await request<any>('/api/volunteering', authHeader(token));
+export async function apiGetVolunteerOpportunities(
+  token: string,
+  filters?: { search?: string; category?: string; volunteer_type?: 'online' | 'offline' | '' }
+) {
+  const params = new URLSearchParams();
+  if (filters?.search) params.set('search', filters.search);
+  if (filters?.category) params.set('category', filters.category);
+  if (filters?.volunteer_type) params.set('volunteer_type', filters.volunteer_type);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const res = await request<VolunteerOpportunity[]>(`/api/volunteering${query}`, authHeader(token));
   if (res.error) return { error: res.error };
-  const raw = Array.isArray(res.data) ? res.data : (res.data?.opportunities ?? []);
-  return { data: { opportunities: raw.map(normaliseOpportunity) } };
+  return { data: asArray<VolunteerOpportunity>(res.data) };
 }
 
-export async function apiApplyVolunteer(token: string, opportunityId: number, notes: string = '') {
-  // Backend expects POST /api/volunteering/:id/apply
-  return request<{ message: string; application: any }>(`/api/volunteering/${opportunityId}/apply`, {
+export async function apiGetVolunteerOpportunity(token: string, id: number) {
+  return request<VolunteerOpportunity>(`/api/volunteering/${id}`, authHeader(token));
+}
+
+export async function apiApplyVolunteer(token: string, opportunityId: number) {
+  return request<{ message: string }>(`/api/volunteering/${opportunityId}/apply`, {
     method: 'POST',
-    body: JSON.stringify({ notes }),
     ...authHeader(token),
   });
+}
+
+export async function apiCancelVolunteerApplication(token: string, opportunityId: number) {
+  return request<{ message: string }>(`/api/volunteering/${opportunityId}/application`, {
+    method: 'DELETE',
+    ...authHeader(token),
+  });
+}
+
+export async function apiGetMyVolunteering(token: string) {
+  const res = await request<VolunteerOpportunity[]>('/api/volunteering/my', authHeader(token));
+  if (res.error) return { error: res.error };
+  return { data: asArray<VolunteerOpportunity>(res.data) };
+}
+
+export async function apiGetMyVolunteerCertificate(token: string, applicationId: number) {
+  return request<VolunteerCertificate>(
+    `/api/volunteering/applications/${applicationId}/certificate/me`,
+    authHeader(token)
+  );
 }
 
 // ── Divine Shop API ──────────────────────────────────────────────────────────
@@ -775,6 +723,8 @@ export type ShopItem = {
   currency: string;
   category: string;
   image_url?: string;
+  /** All product photos (website gallery); first entry is the cover. */
+  images: string[];
   stock_quantity: number; // mapped from product.stock
   stock?: number;
   is_featured: boolean;
@@ -815,7 +765,10 @@ function normaliseProduct(p: any): ShopItem {
     price: String(p.price ?? 0),
     currency: p.currency ?? 'INR',
     category: p.category ?? 'General',
-    image_url: p.image_url ?? undefined,
+    image_url: resolveMediaUrl(p.image_url ?? (Array.isArray(p.images) ? p.images[0] : null)) ?? undefined,
+    images: [...new Set([p.image_url, ...(Array.isArray(p.images) ? p.images : [])].filter(Boolean))]
+      .map((u: string) => resolveMediaUrl(u))
+      .filter((u): u is string => Boolean(u)),
     stock_quantity: p.stock ?? p.stock_quantity ?? 0,
     stock: p.stock ?? p.stock_quantity ?? 0,
     is_featured: p.is_featured ?? false,
@@ -909,20 +862,34 @@ export type UserProfile = {
   date_of_birth: string | null;
   age: number | null;
   role: string;
+  user_category?: 'normal' | 'dikshan';
+  profileComplete?: boolean;
   created_at: string;
 };
 
 export async function apiGetProfile(token: string) {
-  return request<UserProfile>('/api/users/me', authHeader(token));
+  const res = await request<{ user: UserProfile }>('/api/users/me', authHeader(token));
+  if (res.error || !res.data) return { error: res.error ?? 'Could not load your profile.' };
+  return { data: res.data.user };
 }
 
 export async function apiUpdateProfile(
   token: string,
   payload: { name: string; phoneNumber: string; dateOfBirth: string }
 ) {
-  return request<UserProfile>('/api/users/me', {
+  const res = await request<{ user: UserProfile }>('/api/users/me', {
     method: 'PATCH',
     body: JSON.stringify(payload),
+    ...authHeader(token),
+  });
+  if (res.error || !res.data) return { error: res.error ?? 'Could not save your profile.' };
+  return { data: res.data.user };
+}
+
+export async function apiChangePassword(token: string, currentPassword: string, newPassword: string) {
+  return request<{ message: string }>('/api/auth/change-password', {
+    method: 'PATCH',
+    body: JSON.stringify({ currentPassword, newPassword }),
     ...authHeader(token),
   });
 }
@@ -948,8 +915,8 @@ export async function apiGetMeditationStats(token: string) {
     sessionsCompleted: d.sessions_completed ?? d.sessionsCompleted ?? 0,
     bookmarkCount: d.bookmark_count ?? d.bookmarkCount ?? 0,
     totalMinutes: d.total_minutes ?? d.totalMinutes ?? 0,
-    lastPlayed: d.last_played
-      ? { id: d.last_played.id, title: d.last_played.title, completed: !!d.last_played.completed }
+    lastPlayed: (d.lastPlayed ?? d.last_played)
+      ? { id: (d.lastPlayed ?? d.last_played).id, title: (d.lastPlayed ?? d.last_played).title, completed: !!(d.lastPlayed ?? d.last_played).completed }
       : null,
   };
   return { data: stats };
@@ -1062,66 +1029,53 @@ export async function apiDismissNotification(token: string, notificationId: numb
 
 // ── Donations API ─────────────────────────────────────────────────────────────
 
+export type DonationStatus = 'pending' | 'confirmed' | 'cancelled';
+
 export type DonationRecord = {
   id: number;
   amount: number;
   message: string | null;
   is_anonymous: boolean;
-  status: string;
+  status: DonationStatus;
   created_at: string;
+  confirmed_at?: string | null;
+  donor_name?: string | null;
+  donor_email?: string | null;
+  donor_phone?: string | null;
+  purpose?: string | null;
+  source?: 'online' | 'offline';
+};
+
+export type DonationReceipt = {
+  id: number;
+  amount: number;
+  donorName: string;
+  donorEmail: string;
+  donorPhone?: string | null;
+  purpose: string;
+  date: string;
+  receiptNumber: string;
 };
 
 export async function apiGetMyDonations(token: string) {
-  return request<{ donations: DonationRecord[] }>('/api/donations/my', authHeader(token));
-}
-
-// ── My Volunteering history ───────────────────────────────────────────────────
-
-export type MyVolunteerApplication = {
-  id: number;
-  title: string;
-  category: string;
-  location: string;
-  event_date: string | null;
-  application_id: number;
-  application_status: string; // 'pending' | 'approved' | 'rejected' | 'completed'
-  applied_at: string;
-  attendance_status: string | null;
-  duration_minutes: number | null;
-  certificate_status: string | null;
-  certificate_number: string | null;
-};
-
-export async function apiGetMyVolunteering(token: string) {
-  const res = await request<any[]>('/api/volunteering/my', authHeader(token));
+  const res = await request<{ donations: DonationRecord[] }>('/api/donations/my', authHeader(token));
   if (res.error) return { error: res.error };
-  const rows: MyVolunteerApplication[] = (res.data ?? []).map((r: any) => ({
-    id: r.id,
-    title: r.title ?? '',
-    category: r.category ?? '',
-    location: r.location ?? '',
-    event_date: r.event_date ?? null,
-    application_id: r.application_id,
-    application_status: r.application_status ?? 'pending',
-    applied_at: r.applied_at ?? '',
-    attendance_status: r.attendance_status ?? null,
-    duration_minutes: r.duration_minutes ?? null,
-    certificate_status: r.certificate_status ?? null,
-    certificate_number: r.certificate_number ?? null,
-  }));
-  return { data: { applications: rows } };
+  const donations = (res.data?.donations ?? []).map((d) => ({ ...d, amount: Number(d.amount) }));
+  return { data: { donations } };
 }
 
-export async function apiCreateDonation(
+/** Create a Razorpay order for a donation (same contract as the website). */
+export async function apiCreateDonationPaymentOrder(
   token: string,
-  payload: { amount: number; message?: string; isAnonymous?: boolean }
+  payload: { amount: number; purpose: string; address: string; message?: string }
 ) {
-  return request<{ donation: DonationRecord; payment_url?: string }>('/api/donations', {
+  return request<{ order: RazorpayOrder }>('/api/donations/order', {
     method: 'POST',
     body: JSON.stringify({
       amount: payload.amount,
+      purpose: payload.purpose,
+      address: payload.address,
       message: payload.message ?? '',
-      is_anonymous: payload.isAnonymous ?? false,
     }),
     ...authHeader(token),
   });
@@ -1190,6 +1144,7 @@ export type HelpFaq = {
   id: number;
   question: string;
   answer: string;
+  category_id?: number | null;
   category_slug: string;
 };
 
@@ -1203,6 +1158,91 @@ export async function apiGetHelpFaqs(token: string, options?: { search?: string;
   if (options?.category) params.set('category', options.category);
   const query = params.toString() ? `?${params.toString()}` : '';
   return request<{ faqs: HelpFaq[] }>(`/api/help/faqs${query}`, authHeader(token));
+}
+
+export async function apiSubmitFaqFeedback(token: string, faqId: number, helpful: boolean) {
+  return request<unknown>(`/api/help/faqs/${faqId}/feedback`, {
+    method: 'POST',
+    body: JSON.stringify({ helpful }),
+    ...authHeader(token),
+  });
+}
+
+// ── Support tickets API ───────────────────────────────────────────────────────
+
+export type SupportStatus = 'open' | 'in_progress' | 'waiting_for_user' | 'resolved' | 'closed';
+export type SupportPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+export type SupportMessage = {
+  id: number;
+  ticket_id: number;
+  sender_user_id: number | null;
+  sender_name: string | null;
+  sender_role?: 'admin' | 'user' | 'mentor' | null;
+  message: string;
+  created_at: string;
+};
+
+export type SupportTicket = {
+  id: number;
+  ticket_number: string;
+  user_id: number;
+  category_id: number | null;
+  category_name: string | null;
+  subject: string;
+  description: string;
+  status: SupportStatus;
+  priority: SupportPriority;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  messages?: SupportMessage[];
+};
+
+export async function apiCreateSupportTicket(
+  token: string,
+  payload: { category_id?: number | null; subject: string; description: string; priority?: SupportPriority }
+) {
+  const res = await request<{ ticket: SupportTicket }>('/api/support/tickets', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    ...authHeader(token),
+  });
+  if (res.error || !res.data) return { error: res.error ?? 'Could not create the ticket.' };
+  return { data: res.data.ticket };
+}
+
+export async function apiGetMySupportTickets(token: string, status?: string) {
+  const res = await request<SupportTicket[]>(
+    `/api/support/tickets${status ? `?status=${encodeURIComponent(status)}` : ''}`,
+    authHeader(token)
+  );
+  if (res.error) return { error: res.error };
+  return { data: asArray<SupportTicket>(res.data) };
+}
+
+export async function apiGetMySupportTicket(token: string, ticketId: number) {
+  return request<SupportTicket>(`/api/support/tickets/${ticketId}`, authHeader(token));
+}
+
+export async function apiReplySupportTicket(token: string, ticketId: number, message: string) {
+  const res = await request<{ ticket: SupportTicket }>(`/api/support/tickets/${ticketId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+    ...authHeader(token),
+  });
+  if (res.error || !res.data) return { error: res.error ?? 'Could not send your reply.' };
+  return { data: res.data.ticket };
+}
+
+export async function apiReopenSupportTicket(token: string, ticketId: number) {
+  const res = await request<{ ticket: SupportTicket }>(`/api/support/tickets/${ticketId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: 'open' }),
+    ...authHeader(token),
+  });
+  if (res.error || !res.data) return { error: res.error ?? 'Could not reopen the ticket.' };
+  return { data: res.data.ticket };
 }
 
 // ── Cart API ──────────────────────────────────────────────────────────────────
@@ -1235,10 +1275,10 @@ export async function apiGetCart(token: string) {
 }
 
 export async function apiAddToCart(token: string, productId: number, quantity: number = 1) {
-  // Backend: POST /api/cart  { product_id, quantity }
+  // Backend: POST /api/cart  { productId, quantity }  (backend expects camelCase)
   return request<{ message: string }>('/api/cart', {
     method: 'POST',
-    body: JSON.stringify({ product_id: productId, quantity }),
+    body: JSON.stringify({ productId, quantity }),
     ...authHeader(token),
   });
 }
@@ -1281,6 +1321,8 @@ export type VerifiedPayment = {
   receiptNumber: string | null;
   amount: number;
   paidAt: string;
+  donor?: { name: string; email: string; phone?: string | null } | null;
+  donationPurpose?: string | null;
 };
 
 /** Create a Razorpay order for a paid course enrollment. */
@@ -1339,4 +1381,73 @@ export type SiteAnnouncement = {
 export async function apiGetAnnouncement(): Promise<SiteAnnouncement | null> {
   const res = await request<{ announcement: SiteAnnouncement | null }>('/api/site-content/announcement');
   return res.data?.announcement ?? null;
+}
+
+// ── Notification preferences ─────────────────────────────────────────────────
+
+export type NotificationPreferences = {
+  event_notifications: boolean;
+  volunteering_notifications: boolean;
+  camp_notifications: boolean;
+  course_notifications: boolean;
+  meditation_notifications: boolean;
+  community_notifications: boolean;
+  reminder_notifications: boolean;
+  daily_practice_reminder_enabled: boolean;
+  daily_practice_reminder_time: string;
+};
+
+export async function apiGetNotificationPreferences(token: string) {
+  const res = await request<any>('/api/notifications/preferences', authHeader(token));
+  if (res.error) return { error: res.error };
+  return { data: (res.data?.preferences ?? res.data) as NotificationPreferences };
+}
+
+export async function apiUpdateNotificationPreferences(token: string, patch: Partial<NotificationPreferences>) {
+  const res = await request<any>('/api/notifications/preferences', {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+    ...authHeader(token),
+  });
+  if (res.error) return { error: res.error };
+  return { data: (res.data?.preferences ?? res.data) as NotificationPreferences };
+}
+
+// ── Meditation categories ────────────────────────────────────────────────────
+
+export type MeditationCategory = { id: number; name: string };
+
+export async function apiGetMeditationCategories(token: string) {
+  const res = await request<{ categories: MeditationCategory[] }>('/api/meditation/categories', authHeader(token));
+  if (res.error) return { error: res.error };
+  return { data: res.data?.categories ?? [] };
+}
+
+// ── About page content ───────────────────────────────────────────────────────
+
+export type AboutContent = {
+  introTitle: string;
+  introParagraphs: string[];
+  introImage: string;
+  introCaption: string;
+  beliefQuote: string;
+  beliefDescription: string;
+  values: { title: string; description: string }[];
+  focusTitle: string;
+  focusDescription: string;
+  focusAreas: { title: string; description: string }[];
+  programsTitle: string;
+  programsDescription: string;
+  programs: { title: string; description: string }[];
+  partnershipTitle: string;
+  partnershipDescription: string;
+  partnershipItems: string[];
+  visionTitle: string;
+  visionDescription: string;
+};
+
+export async function apiGetAboutContent(): Promise<Partial<AboutContent> | null> {
+  const res = await request<any>('/api/site-content/about');
+  if (res.error || !res.data) return null;
+  return (res.data.about ?? res.data.content ?? res.data) as Partial<AboutContent>;
 }

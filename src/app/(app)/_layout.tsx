@@ -1,28 +1,22 @@
 import { Stack } from 'expo-router';
 
+/** Every screen behind sign-in. Members only — admin accounts use the website. */
 export default function AuthenticatedLayout() {
   return (
     <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
-      {/* Tab navigator */}
       <Stack.Screen name="(tabs)" />
 
-      {/* courses/ has its own _layout.tsx — no explicit Screen needed; router discovers it */}
-
-      {/* Meditations library — folder with index.tsx, no nested layout */}
+      {/* Learn (courses/ has its own _layout.tsx) */}
       <Stack.Screen name="meditations" />
+      <Stack.Screen name="meditation/[meditationId]" options={{ animation: 'fade_from_bottom' }} />
 
-      {/* Meditation player */}
-      <Stack.Screen
-        name="meditation/[meditationId]"
-        options={{ animation: 'fade_from_bottom' }}
-      />
-
-      {/* Community */}
-      <Stack.Screen name="community/create-post" options={{ presentation: 'modal' }} />
-      <Stack.Screen name="community/[postId]" />
-
-      {/* Events */}
+      {/* Connect */}
+      <Stack.Screen name="community/group/[groupId]" />
+      <Stack.Screen name="community/question/[questionId]" />
       <Stack.Screen name="events/[eventId]" />
+      <Stack.Screen name="events/my" />
+      <Stack.Screen name="volunteering/[opportunityId]" />
+      <Stack.Screen name="volunteering/my" />
 
       {/* Shop */}
       <Stack.Screen name="shop/index" />
@@ -32,14 +26,20 @@ export default function AuthenticatedLayout() {
 
       {/* Account */}
       <Stack.Screen name="edit-profile" />
+      <Stack.Screen name="journey" />
+      <Stack.Screen name="settings" />
       <Stack.Screen name="bookmarks" />
       <Stack.Screen name="notifications" />
+      <Stack.Screen name="about" />
 
       {/* Practice */}
       <Stack.Screen name="sadhana" />
 
-      {/* Help */}
+      {/* Help & support */}
       <Stack.Screen name="help" />
+      <Stack.Screen name="support/index" />
+      <Stack.Screen name="support/new" />
+      <Stack.Screen name="support/[ticketId]" />
     </Stack>
   );
 }

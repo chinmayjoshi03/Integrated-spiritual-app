@@ -1,17 +1,17 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AppHeader, Card, Screen, SectionTitle, ui } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import { AppHeader, Card, type IoniconName, Screen, SectionTitle } from '@/components/karma-ui';
+import { BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import {
   type Meditation,
@@ -19,23 +19,16 @@ import {
   apiGetMeditationStats,
 } from '@/services/api';
 
-// Three scope tabs matching the website: All / Free (general) / Purchased (course-locked)
-type ScopeTab = 'all' | 'free' | 'purchased';
-
-const SCOPE_TABS: { key: ScopeTab; label: string; emoji: string }[] = [
-  { key: 'all',       label: 'All',       emoji: '✦' },
-  { key: 'free',      label: 'Free',      emoji: '🌸' },
-  { key: 'purchased', label: 'Purchased', emoji: '🔓' },
-];
 
 function categoryTheme(cat: string | null | undefined) {
-  const CATEGORY_THEME: Record<string, { bg: string; tagBg: string; emoji: string }> = {
-    Guided:     { bg: '#4F46E5', tagBg: '#E0E7FF', emoji: '🧘' },
-    Sound:      { bg: '#D97706', tagBg: '#FEF3C7', emoji: '🎵' },
-    Breathwork: { bg: '#059669', tagBg: '#D1FAE5', emoji: '🫁' },
-    Ambient:    { bg: '#7C3AED', tagBg: '#EDE9FE', emoji: '✨' },
+  // Website palette only — the icon distinguishes the category.
+  const CATEGORY_THEME: Record<string, { bg: string; tagBg: string; icon: IoniconName }> = {
+    Guided:     { bg: Palette.goldDark, tagBg: Palette.goldSoft, icon: 'body-outline' },
+    Sound:      { bg: Palette.brown,    tagBg: Palette.goldSoft, icon: 'musical-notes-outline' },
+    Breathwork: { bg: Palette.success,  tagBg: Palette.successSoft, icon: 'leaf-outline' },
+    Ambient:    { bg: Palette.gold,     tagBg: Palette.goldSoft, icon: 'sparkles-outline' },
   };
-  return CATEGORY_THEME[cat ?? ''] ?? { bg: Palette.goldDark, tagBg: Palette.goldSoft, emoji: '🌸' };
+  return CATEGORY_THEME[cat ?? ''] ?? { bg: Palette.goldDark, tagBg: Palette.goldSoft, icon: 'flower-outline' as IoniconName };
 }
 
 function formatMin(sec: number | null | undefined): string {
@@ -46,7 +39,6 @@ function formatMin(sec: number | null | undefined): string {
 
 export default function MeditationsLibraryScreen() {
   const { session } = useSession();
-  const [activeScope, setActiveScope] = useState<ScopeTab>('all');
   const [allMeditations, setAllMeditations] = useState<Meditation[]>([]);
   const [totalMinutes, setTotalMinutes] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
@@ -79,13 +71,7 @@ export default function MeditationsLibraryScreen() {
     useCallback(() => { fetchMeditations(); }, [fetchMeditations])
   );
 
-  // Client-side scope filtering — matches website's scope tabs
-  const displayed =
-    activeScope === 'free'
-      ? allMeditations.filter((m) => !m.course_id)       // no course = free/general
-      : activeScope === 'purchased'
-      ? allMeditations.filter((m) => m.course_id && !m.locked) // enrolled in course
-      : allMeditations;
+  const displayed = allMeditations;
 
   const featured = displayed[0] ?? null;
   const listData = displayed.slice(1);
@@ -94,8 +80,7 @@ export default function MeditationsLibraryScreen() {
     <SafeAreaView style={styles.safe}>
       <Screen>
         <AppHeader
-          title="Meditation Sanctuary"
-          subtitle="Guided sessions, sound baths & stillness"
+          title="Meditations"
           back
         />
 
@@ -117,28 +102,6 @@ export default function MeditationsLibraryScreen() {
           </View>
         </View>
 
-        {/* Scope filter — All / Free / Purchased */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.catBar}
-        >
-          {SCOPE_TABS.map((tab) => {
-            const active = activeScope === tab.key;
-            return (
-              <Pressable
-                key={tab.key}
-                onPress={() => setActiveScope(tab.key)}
-                style={[styles.catPill, active && styles.catPillActive]}
-              >
-                <Text style={[styles.catText, active && styles.catTextActive]}>
-                  {tab.emoji} {tab.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
         {loading && !refreshing ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator color={Palette.gold} size="large" />
@@ -146,7 +109,7 @@ export default function MeditationsLibraryScreen() {
         ) : (
           <>
             {/* Featured card */}
-            {featured && activeScope !== 'purchased' && (
+            {featured && (
               <>
                 <SectionTitle>Featured practice</SectionTitle>
                 <Pressable
@@ -154,18 +117,14 @@ export default function MeditationsLibraryScreen() {
                 >
                   <Card style={[styles.featuredCard, featured.locked && styles.featuredCardLocked] as any}>
                     <View style={styles.featuredHeader}>
-                      <View style={styles.catBadge}>
-                        <Text style={styles.catBadgeText}>
-                          {(featured.category ?? 'General').toUpperCase()}
-                        </Text>
-                      </View>
+                      <View />
                       <View style={styles.featuredHeaderRight}>
                         {featured.duration_sec > 0 && (
                           <Text style={styles.durBadge}>{formatMin(featured.duration_sec)}</Text>
                         )}
                         {featured.locked && (
                           <View style={styles.lockBadge}>
-                            <Text style={styles.lockBadgeText}>🔒 Enroll to unlock</Text>
+                            <Text style={styles.lockBadgeText}>Enroll to unlock</Text>
                           </View>
                         )}
                       </View>
@@ -180,12 +139,12 @@ export default function MeditationsLibraryScreen() {
 
                     <View style={styles.featuredFooter}>
                       <View style={styles.guideRow}>
-                        <Text style={styles.guideAvatar}>🧘‍♂️</Text>
+                        <Ionicons name="person-circle-outline" size={20} color={Palette.goldSoft} />
                         <Text style={styles.guideName}>{featured.guide_name}</Text>
                       </View>
                       {!featured.locked && (
                         <View style={styles.playFab}>
-                          <Text style={styles.playFabIcon}>▶</Text>
+                          <Ionicons name="play" size={16} color={Palette.charcoal} style={{ marginLeft: 2 }} />
                         </View>
                       )}
                     </View>
@@ -195,29 +154,16 @@ export default function MeditationsLibraryScreen() {
             )}
 
             {/* Full list */}
-            <SectionTitle>
-              {activeScope === 'free' ? 'Free Sessions'
-                : activeScope === 'purchased' ? 'Your Purchased Sessions'
-                : 'All Sessions'}
-            </SectionTitle>
+            <SectionTitle>All sessions</SectionTitle>
 
             {displayed.length === 0 ? (
               <Card style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>🧘‍♀️</Text>
-                <Text style={styles.emptyTitle}>
-                  {activeScope === 'free' ? 'No free sessions available'
-                    : activeScope === 'purchased' ? 'No purchased sessions yet'
-                    : 'No sessions available'}
-                </Text>
-                <Text style={[ui.small, { textAlign: 'center' }]}>
-                  {activeScope === 'purchased'
-                    ? 'Enroll in a course to unlock its meditations here.'
-                    : 'Check back soon.'}
-                </Text>
+                <Ionicons name="headset-outline" size={40} color={Palette.stoneLight} />
+                <Text style={styles.emptyTitle}>No sessions available</Text>
               </Card>
             ) : (
               <View style={styles.listWrap}>
-                {(activeScope === 'all' ? listData : displayed).map((m) => (
+                {listData.map((m) => (
                   <MeditationCard key={m.id} item={m} />
                 ))}
               </View>
@@ -245,18 +191,13 @@ function MeditationCard({ item }: { item: Meditation }) {
     <Pressable onPress={handlePress}>
       <Card style={[styles.card, item.locked && styles.cardLocked] as any}>
         {/* Art */}
-        <View style={[styles.cardArt, { backgroundColor: item.locked ? '#E5E7EB' : theme.bg }]}>
-          <Text style={styles.artSymbol}>{item.locked ? '🔒' : theme.emoji}</Text>
+        <View style={[styles.cardArt, { backgroundColor: item.locked ? Palette.line : theme.bg }]}>
+          <Ionicons name={item.locked ? 'lock-closed' : theme.icon} size={24} color={item.locked ? Palette.stone : Palette.onAccent} />
         </View>
 
         {/* Body */}
         <View style={styles.cardBody}>
           <View style={styles.cardTopRow}>
-            <View style={[styles.miniCatBadge, { backgroundColor: item.locked ? '#F3F4F6' : theme.tagBg }]}>
-              <Text style={[styles.miniCatText, { color: item.locked ? Palette.stone : theme.bg }]}>
-                {item.locked ? 'Course' : (item.category ?? 'General')}
-              </Text>
-            </View>
             {item.duration_sec > 0 && (
               <Text style={styles.durationText}>{formatMin(item.duration_sec)}</Text>
             )}
@@ -267,7 +208,7 @@ function MeditationCard({ item }: { item: Meditation }) {
           {item.locked ? (
             <>
               <Text style={styles.lockedCourse} numberOfLines={1}>
-                📖 {item.course_title ?? 'Course required'}
+                {item.course_title ?? 'Course required'}
               </Text>
               {item.course_price && Number(item.course_price) > 0 && (
                 <View style={styles.lockedPriceRow}>
@@ -275,7 +216,7 @@ function MeditationCard({ item }: { item: Meditation }) {
                     ₹{Number(item.course_price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                   </Text>
                   <View style={styles.enrollCta}>
-                    <Text style={styles.enrollCtaText}>Enroll →</Text>
+                    <Text style={styles.enrollCtaText}>Enroll</Text>
                   </View>
                 </View>
               )}
@@ -287,7 +228,7 @@ function MeditationCard({ item }: { item: Meditation }) {
           )}
 
           {!item.locked && item.completed ? (
-            <Text style={styles.checkDone}>✓ Completed</Text>
+            <Text style={styles.checkDone}>Completed</Text>
           ) : !item.locked && pct > 0 ? (
             <View style={styles.progressRow}>
               <View style={styles.miniTrack}>
@@ -300,7 +241,7 @@ function MeditationCard({ item }: { item: Meditation }) {
 
         {/* Play / lock */}
         <View style={[styles.playCircle, item.locked && styles.playCircleLocked]}>
-          <Text style={styles.playCircleIcon}>{item.locked ? '🔒' : '▶'}</Text>
+          <Ionicons name={item.locked ? 'lock-closed' : 'play'} size={16} color={item.locked ? Palette.stone : Palette.goldDark} />
         </View>
       </Card>
     </Pressable>
@@ -323,12 +264,15 @@ const styles = StyleSheet.create({
     borderColor: Palette.line,
   },
   statBox: { alignItems: 'center' },
-  statVal: { color: Palette.goldDark, fontFamily: 'serif', fontSize: 22, fontWeight: '700' },
+  statVal: { color: Palette.goldDark, fontFamily: BrandFonts.heading, fontSize: 22 },
   statLbl: { color: Palette.stone, fontSize: 11, fontWeight: '600', marginTop: 2 },
   statDivider: { width: 1, height: 28, backgroundColor: Palette.line },
 
   catBar: { flexDirection: 'row', gap: 8, paddingVertical: 10 },
   catPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
@@ -342,13 +286,13 @@ const styles = StyleSheet.create({
 
   // Featured
   featuredCard: {
-    backgroundColor: '#1E1B4B',
+    backgroundColor: Palette.brown,
     padding: 20,
     borderRadius: 24,
     gap: 12,
   },
   featuredCardLocked: {
-    backgroundColor: '#2D2D2D',
+    backgroundColor: Palette.charcoal,
   },
   featuredHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   featuredHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -358,21 +302,21 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 12,
   },
-  catBadgeText: { color: '#E0E7FF', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
-  durBadge: { color: '#C7D2FE', fontSize: 12, fontWeight: '700' },
+  catBadgeText: { color: Palette.goldSoft, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  durBadge: { color: Palette.goldSoft, fontSize: 12, fontWeight: '700' },
   lockBadge: {
     backgroundColor: 'rgba(255,255,255,0.1)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
-  lockBadgeText: { color: '#FCA5A5', fontSize: 11, fontWeight: '700' },
-  featuredTitle: { color: '#FFFFFF', fontFamily: 'serif', fontSize: 22, fontWeight: '700', lineHeight: 28 },
-  featuredDesc: { color: '#A5B4FC', fontSize: 14, lineHeight: 20 },
+  lockBadgeText: { color: Palette.goldSoft, fontSize: 11, fontWeight: '700' },
+  featuredTitle: { color: Palette.onAccent, fontFamily: BrandFonts.heading, fontSize: 22, lineHeight: 28 },
+  featuredDesc: { color: Palette.goldSoft, fontSize: 14, lineHeight: 20 },
   featuredFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
   guideRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   guideAvatar: { fontSize: 18 },
-  guideName: { color: '#E0E7FF', fontSize: 13, fontWeight: '600' },
+  guideName: { color: Palette.goldSoft, fontSize: 13, fontWeight: '600' },
   playFab: {
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: Palette.gold, alignItems: 'center', justifyContent: 'center',
@@ -394,7 +338,7 @@ const styles = StyleSheet.create({
   cardGuide: { color: Palette.stone, fontSize: 13 },
   lockedCourse: { color: Palette.stone, fontSize: 12 },
   lockedPriceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
-  lockedPrice: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 15, fontWeight: '800' },
+  lockedPrice: { color: Palette.charcoal, fontFamily: BrandFonts.heading, fontSize: 15 },
   enrollCta: {
     backgroundColor: Palette.goldDark,
     paddingHorizontal: 12, paddingVertical: 5,
@@ -417,5 +361,5 @@ const styles = StyleSheet.create({
   // Empty
   emptyCard: { alignItems: 'center', gap: 10, paddingVertical: 36 },
   emptyIcon: { fontSize: 44 },
-  emptyTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 18, fontWeight: '700' },
+  emptyTitle: { color: Palette.charcoal, fontFamily: BrandFonts.heading, fontSize: 18 },
 });

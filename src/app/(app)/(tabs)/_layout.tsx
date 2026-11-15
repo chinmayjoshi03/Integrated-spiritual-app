@@ -1,19 +1,27 @@
-import { Tabs } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { Redirect, Tabs } from 'expo-router';
 import { Platform } from 'react-native';
 
-import { AppIcon } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import { BrandFonts, Palette } from '@/constants/theme';
+import { useSession } from '@/context/auth-context';
 
-// [route name, label, AppIcon name]
-const TABS = [
-  ['index',   'Home',    'home'],
-  ['learn',   'Learn',   'learn'],
-  ['connect', 'Connect', 'connect'],
-  ['give',    'Give',    'give'],
-  ['account', 'Account', 'account'],
-] as const;
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+// [route name, label, icon, active icon]
+const TABS: [string, string, IconName, IconName][] = [
+  ['index', 'Home', 'home-outline', 'home'],
+  ['learn', 'Learn', 'book-outline', 'book'],
+  ['connect', 'Connect', 'people-outline', 'people'],
+  ['give', 'Give', 'heart-outline', 'heart'],
+  ['account', 'Account', 'person-circle-outline', 'person-circle'],
+];
 
 export default function TabLayout() {
+  const { user } = useSession();
+
+  // Same rule as the website: phone number and date of birth are required before using the app.
+  if (user && user.profileComplete === false) return <Redirect href={'/edit-profile?required=1' as any} />;
+
   return (
     <Tabs
       screenOptions={({ route }) => {
@@ -21,9 +29,7 @@ export default function TabLayout() {
         return {
           headerShown: false,
           tabBarLabel: tab[1],
-          tabBarIcon: ({ focused, color }) => (
-            <AppIcon name={tab[2]} active={focused} size={24} />
-          ),
+          tabBarIcon: ({ focused }) => <Ionicons name={focused ? tab[3] : tab[2]} size={24} color={focused ? Palette.goldDark : Palette.stoneLight} />,
           tabBarActiveTintColor: Palette.goldDark,
           tabBarInactiveTintColor: Palette.stoneLight,
           tabBarStyle: {
@@ -34,17 +40,11 @@ export default function TabLayout() {
             borderTopColor: Palette.line,
             backgroundColor: Palette.surface,
           },
-          tabBarLabelStyle: {
-            fontSize: 11,
-            fontWeight: '600',
-            marginTop: 2,
-          },
+          tabBarLabelStyle: { fontFamily: BrandFonts.bodySemi, fontSize: 11, marginTop: 2 },
         };
       }}
     >
-      {TABS.map(([name]) => (
-        <Tabs.Screen key={name} name={name} />
-      ))}
+      {TABS.map(([name]) => <Tabs.Screen key={name} name={name} />)}
     </Tabs>
   );
 }

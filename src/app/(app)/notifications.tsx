@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -10,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader, Card, Screen, ui } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import { BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import {
   type AppNotification,
@@ -21,21 +22,24 @@ import {
 } from '@/services/api';
 import { useFocusEffect } from 'expo-router';
 
-// Map notification type prefix → emoji icon
-function iconForType(type: string): string {
-  if (type.startsWith('EVENT')) return '📅';
-  if (type.startsWith('VOLUNTEERING')) return '🤝';
-  if (type.startsWith('COMMUNITY')) return '💬';
-  if (type.includes('MEDITATION')) return '🌸';
-  if (type.startsWith('SUPPORT')) return '🆘';
-  return '🔔';
+// Map notification type prefix → icon
+function iconForType(type: string): React.ComponentProps<typeof Ionicons>['name'] {
+  if (type.startsWith('EVENT')) return 'calendar-outline';
+  if (type.startsWith('VOLUNTEERING')) return 'hand-left-outline';
+  if (type.startsWith('COMMUNITY')) return 'chatbubbles-outline';
+  if (type.includes('MEDITATION')) return 'flower-outline';
+  if (type.startsWith('COURSE')) return 'book-outline';
+  if (type.startsWith('SUPPORT')) return 'help-buoy-outline';
+  return 'notifications-outline';
 }
 
 // Navigate to the entity the notification is about
 function pathForNotification(type: string, entityId: number | null): string | null {
   if (!entityId) return null;
   if (type.startsWith('EVENT')) return `/events/${entityId}`;
-  if (type.startsWith('COMMUNITY')) return `/community/${entityId}`;
+  if (type.startsWith('COMMUNITY')) return `/community/question/${entityId}`;
+  if (type.startsWith('VOLUNTEERING')) return `/volunteering/${entityId}`;
+  if (type.startsWith('SUPPORT')) return `/support/${entityId}`;
   if (type.startsWith('MEDITATION') || type.includes('MEDITATION')) return `/meditation/${entityId}`;
   if (type.startsWith('COURSE')) return `/courses/${entityId}`;
   return null;
@@ -111,7 +115,7 @@ export default function NotificationsScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <Screen>
-        <AppHeader title="Notifications" subtitle="Stay current with your practice and community." back />
+        <AppHeader title="Notifications" back />
 
         {/* Toolbar */}
         <View style={styles.toolbar}>
@@ -154,7 +158,7 @@ export default function NotificationsScreen() {
           </View>
         ) : items.length === 0 ? (
           <Card style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>🔔</Text>
+            <Ionicons name="notifications-outline" size={44} color={Palette.stoneLight} />
             <Text style={styles.emptyTitle}>No notifications yet</Text>
             <Text style={[ui.small, { textAlign: 'center' }]}>
               When something is published or a reminder is due, it will appear here.
@@ -170,7 +174,7 @@ export default function NotificationsScreen() {
 
                   {/* Icon */}
                   <View style={styles.notifIcon}>
-                    <Text style={styles.notifIconEmoji}>{iconForType(item.type)}</Text>
+                    <Ionicons name={iconForType(item.type)} size={18} color={Palette.goldDark} />
                   </View>
 
                   {/* Body */}
@@ -199,7 +203,7 @@ export default function NotificationsScreen() {
                       handleDismiss(item);
                     }}
                   >
-                    <Text style={styles.dismissIcon}>✕</Text>
+                    <Ionicons name="close" size={16} color={Palette.stoneLight} />
                   </Pressable>
                 </View>
               </Pressable>
@@ -247,7 +251,7 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 44 },
   emptyTitle: {
     color: Palette.charcoal,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 18,
     fontWeight: '700',
   },

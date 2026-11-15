@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
@@ -10,8 +11,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AppHeader, Card, Screen, SectionTitle, ui } from '@/components/karma-ui';
-import { Palette, Spacing } from '@/constants/theme';
+import { AppHeader, Card, ui } from '@/components/karma-ui';
+import { BrandFonts, Palette, Spacing } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import { type Course, apiGetCourses } from '@/services/api';
 
@@ -69,7 +70,7 @@ export default function CoursesScreen() {
 
         {/* Header */}
         <View style={styles.headerOuter}>
-          <AppHeader title="Courses" subtitle="Learn at your own pace" />
+          <AppHeader title="Courses" />
         </View>
 
         {/* Hero band */}
@@ -120,7 +121,7 @@ export default function CoursesScreen() {
             <>
               {displayed.length === 0 ? (
                 <EmptyState
-                  symbol={filter === 'enrolled' ? '📚' : '🎓'}
+                  icon={filter === 'enrolled' ? 'library-outline' : 'school-outline'}
                   title={filter === 'enrolled' ? 'No enrolled courses' : filter === 'available' ? 'No available courses' : 'No courses yet'}
                   body={filter === 'enrolled' ? 'Purchase a course below to get started.' : 'Check back soon — new teachings are added regularly.'}
                 />
@@ -149,7 +150,7 @@ function CourseCard({ course, onPress }: { course: Course; onPress: () => void }
       <Card style={[styles.courseCard, isLocked && styles.courseCardLocked] as any}>
         {/* Art banner */}
         <View style={[styles.courseBanner, isLocked && styles.courseBannerLocked]}>
-          <Text style={styles.courseBannerEmoji}>{isLocked ? '🔒' : '📖'}</Text>
+          <Ionicons name={isLocked ? 'lock-closed-outline' : 'book-outline'} size={40} color={Palette.goldDark} />
           {isLocked && (
             <View style={styles.priceBadge}>
               <Text style={styles.priceBadgeText}>{formatPrice(course.price)}</Text>
@@ -157,7 +158,7 @@ function CourseCard({ course, onPress }: { course: Course; onPress: () => void }
           )}
           {course.enrolled && (
             <View style={styles.enrolledBadge}>
-              <Text style={styles.enrolledBadgeText}>✓ Enrolled</Text>
+              <Text style={styles.enrolledBadgeText}>Enrolled</Text>
             </View>
           )}
         </View>
@@ -193,13 +194,13 @@ function CourseCard({ course, onPress }: { course: Course; onPress: () => void }
               <>
                 <Text style={styles.lockPrice}>{formatPrice(course.price)}</Text>
                 <View style={styles.unlockBtn}>
-                  <Text style={styles.unlockBtnText}>Enroll →</Text>
+                  <Text style={styles.unlockBtnText}>Enroll</Text>
                 </View>
               </>
             ) : (
               <View style={styles.openBtn}>
                 <Text style={styles.openBtnText}>
-                  {(course.progress_pct ?? 0) > 0 ? 'Continue →' : 'Start course →'}
+                  {(course.progress_pct ?? 0) > 0 ? 'Continue' : 'Start course'}
                 </Text>
               </View>
             )}
@@ -219,10 +220,10 @@ function StatChip({ value, label, accent = false }: { value: string; label: stri
   );
 }
 
-function EmptyState({ symbol, title, body }: { symbol: string; title: string; body: string }) {
+function EmptyState({ icon, title, body }: { icon: React.ComponentProps<typeof Ionicons>['name']; title: string; body: string }) {
   return (
     <Card style={emptyStyles.card}>
-      <Text style={emptyStyles.symbol}>{symbol}</Text>
+      <Ionicons name={icon} size={44} color={Palette.goldDark} />
       <Text style={emptyStyles.title}>{title}</Text>
       <Text style={[ui.small, { textAlign: 'center' }]}>{body}</Text>
     </Card>
@@ -238,7 +239,7 @@ const chipStyles = StyleSheet.create({
     borderRadius: 14, paddingVertical: 10,
   },
   wrapAccent: { backgroundColor: 'rgba(201,162,77,0.25)' },
-  value: { color: '#FFFFFF', fontFamily: 'serif', fontSize: 22, fontWeight: '700' },
+  value: { color: '#FFFFFF', fontFamily: BrandFonts.heading, fontSize: 22 },
   valueAccent: { color: Palette.gold },
   label: { color: 'rgba(255,255,255,0.6)', fontSize: 11 },
 });
@@ -246,7 +247,7 @@ const chipStyles = StyleSheet.create({
 const emptyStyles = StyleSheet.create({
   card: { alignItems: 'center', gap: 12, paddingVertical: 40 },
   symbol: { fontSize: 48 },
-  title: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 20, fontWeight: '700' },
+  title: { color: Palette.charcoal, fontFamily: BrandFonts.heading, fontSize: 20 },
 });
 
 const styles = StyleSheet.create({
@@ -262,7 +263,7 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     gap: 10,
   },
-  heroTitle: { color: '#F0E6CC', fontFamily: 'serif', fontSize: 26, fontWeight: '700' },
+  heroTitle: { color: '#F0E6CC', fontFamily: BrandFonts.heading, fontSize: 26 },
   heroBody: { color: 'rgba(255,255,255,0.55)', fontSize: 14, lineHeight: 20 },
   statsRow: { flexDirection: 'row', gap: 10, marginTop: 6 },
 
@@ -312,7 +313,7 @@ const styles = StyleSheet.create({
     color: Palette.gold,
     fontSize: 13,
     fontWeight: '800',
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
   },
 
   enrolledBadge: {
@@ -339,7 +340,7 @@ const styles = StyleSheet.create({
 
   courseTitle: {
     color: Palette.charcoal,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 18,
     fontWeight: '700',
     lineHeight: 24,
@@ -364,7 +365,7 @@ const styles = StyleSheet.create({
   },
   lockPrice: {
     color: Palette.charcoal,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 20,
     fontWeight: '800',
   },

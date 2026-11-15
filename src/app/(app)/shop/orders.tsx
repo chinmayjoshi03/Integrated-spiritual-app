@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -10,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader, Card, Screen, SectionTitle } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import { BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import { type ShopOrder, apiGetShopOrders } from '@/services/api';
 
@@ -52,7 +53,7 @@ export default function ShopOrdersScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <Screen>
-        <AppHeader title="My Orders" subtitle="Your sacred purchases" back />
+        <AppHeader title="My Orders" back />
 
         {loading ? (
           <View style={styles.loadingWrap}>
@@ -60,7 +61,7 @@ export default function ShopOrdersScreen() {
           </View>
         ) : orders.length === 0 ? (
           <Card style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>📦</Text>
+            <Ionicons name="cube-outline" size={44} color={Palette.stoneLight} />
             <Text style={styles.emptyTitle}>No orders yet</Text>
             <Text style={styles.emptySubtitle}>Your sacred purchases will appear here.</Text>
             <Pressable style={styles.shopBtn} onPress={() => router.replace('/shop' as any)}>
@@ -95,7 +96,7 @@ export default function ShopOrdersScreen() {
                               {statusKey === 'paid' ? 'Confirmed' : statusKey}
                             </Text>
                           </View>
-                          <Text style={styles.chevron}>{isExpanded ? '▲' : '▼'}</Text>
+                          <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={Palette.goldDark} />
                         </View>
                       </View>
 
@@ -104,7 +105,7 @@ export default function ShopOrdersScreen() {
                         <View style={styles.thumbStrip}>
                           {items.slice(0, 3).map((item, idx) => (
                             <View key={idx} style={styles.thumbBox}>
-                              <Text style={styles.thumbEmoji}>✨</Text>
+                              <Ionicons name="cube-outline" size={22} color={Palette.goldDark} />
                             </View>
                           ))}
                           {items.length > 3 && (
@@ -125,7 +126,7 @@ export default function ShopOrdersScreen() {
                           {items.map((item, idx) => (
                             <View key={idx} style={styles.itemRow}>
                               <View style={styles.itemThumb}>
-                                <Text style={styles.thumbEmoji}>✨</Text>
+                                <Ionicons name="cube-outline" size={22} color={Palette.goldDark} />
                               </View>
                               <View style={styles.itemInfo}>
                                 <Text style={styles.itemName} numberOfLines={2}>
@@ -174,7 +175,7 @@ const styles = StyleSheet.create({
 
   emptyCard: { alignItems: 'center', gap: 12, paddingVertical: 48 },
   emptyIcon: { fontSize: 52 },
-  emptyTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 20, fontWeight: '700' },
+  emptyTitle: { color: Palette.charcoal, fontFamily: BrandFonts.heading, fontSize: 20 },
   emptySubtitle: { color: Palette.stone, fontSize: 14, textAlign: 'center' },
   shopBtn: {
     backgroundColor: Palette.goldDark, paddingHorizontal: 24, paddingVertical: 12,
@@ -222,7 +223,7 @@ const styles = StyleSheet.create({
     paddingTop: 8, borderTopWidth: 1, borderTopColor: Palette.line,
   },
   totalLabel: { color: Palette.charcoal, fontSize: 14, fontWeight: '700' },
-  totalValue: { color: Palette.goldDark, fontFamily: 'serif', fontSize: 18, fontWeight: '800' },
+  totalValue: { color: Palette.goldDark, fontFamily: BrandFonts.heading, fontSize: 18 },
 
   addressBlock: { gap: 3 },
   addressLabel: { color: Palette.stone, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },

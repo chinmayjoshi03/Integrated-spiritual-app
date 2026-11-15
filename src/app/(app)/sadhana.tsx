@@ -10,7 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader, Card, Screen, SectionTitle, ui } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import { BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import {
   type SadhanaEntry,
@@ -81,7 +81,7 @@ export default function SadhanaScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <Screen>
-        <AppHeader title="Daily Sadhana" subtitle="One mindful practice, shared each day." back />
+        <AppHeader title="Daily Sadhana" back />
 
         {error !== '' && (
           <Card style={styles.errorCard}>
@@ -105,13 +105,13 @@ export default function SadhanaScreen() {
                     <Text style={[ui.body, { marginTop: 4 }]}>{sadhana.description}</Text>
                   ) : (
                     <Text style={ui.body}>
-                      Take a few moments to complete today's practice.
+                      Take a few moments to complete today’s practice.
                     </Text>
                   )}
 
                   {sadhana.completed ? (
                     <View style={styles.completedBadge}>
-                      <Text style={styles.completedBadgeText}>✓ Completed today</Text>
+                      <Text style={styles.completedBadgeText}>Completed today</Text>
                     </View>
                   ) : (
                     <Pressable
@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
   },
   todayTitle: {
     color: Palette.charcoal,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 22,
     fontWeight: '700',
     lineHeight: 28,
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
   statCard: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: 20 },
   statValue: {
     color: Palette.goldDark,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 36,
     fontWeight: '700',
   },
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
   },
   leaderRank: {
     color: Palette.goldDark,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 18,
     fontWeight: '700',
     minWidth: 28,

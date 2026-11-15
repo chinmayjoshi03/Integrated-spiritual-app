@@ -1,4 +1,5 @@
-import * as WebBrowser from 'expo-web-browser';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -12,35 +13,31 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader, Card, Screen, SectionTitle, ui } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import RazorpayCheckoutSheet from '@/components/RazorpayCheckoutSheet';
+import { Brand, BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import {
   type CartItem,
-  BASE_URL as API_BASE_URL,
   apiCreateShopPaymentOrder,
   apiGetCart,
   apiRemoveCartItem,
   apiUpdateCartItem,
-  apiVerifyPayment,
+  resolveMediaUrl,
 } from '@/services/api';
 
 const money = (amount: number) =>
   `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-
-const CATEGORY_EMOJI: Record<string, string> = {
-  Malas: '📿', Incense: '🌿', Crystals: '💎', Texts: '📖',
-  'Ritual Tools': '🔔', Apparel: '🧘',
-};
 
 export default function CartScreen() {
   const { session, user } = useSession();
   const [items, setItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyItemId, setBusyItemId] = useState<number | null>(null);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<number | null>(null);
   const [error, setError] = useState('');
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   // Delivery address fields
   const [fullName, setFullName] = useState(user?.name ?? '');
@@ -48,10 +45,9 @@ export default function CartScreen() {
   const [line1, setLine1] = useState('');
   const [line2, setLine2] = useState('');
   const [city, setCity] = useState('');
-  const [state, setState] = useState('');
+  const [stateName, setStateName] = useState('');
   const [pin, setPin] = useState('');
   const [country, setCountry] = useState('India');
-  const [checkingOut, setCheckingOut] = useState(false);
 
   const loadCart = useCallback(async () => {
     if (!session) return;
@@ -75,125 +71,61 @@ export default function CartScreen() {
     setBusyItemId(null);
   };
 
-  const removeItem = (item: CartItem) => {
-    Alert.alert('Remove item', `Remove "${item.name}" from your cart?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove', style: 'destructive',
-        onPress: async () => {
-          setBusyItemId(item.id);
-          await apiRemoveCartItem(session!, item.id);
-          setItems((prev) => prev.filter((i) => i.id !== item.id));
-          setBusyItemId(null);
-        },
-      },
-    ]);
-  };
-
-  const handleCheckout = async () => {
-    if (!session || items.length === 0) return;
-    if (!fullName.trim() || !phone.trim() || !line1.trim() || !city.trim() || !state.trim() || !pin.trim()) {
-      Alert.alert('Missing details', 'Please fill in all required delivery fields.');
-      return;
-    }
-    const addressStr = [fullName, `Phone: ${phone}`, line1, line2, `${city}, ${state} ${pin}`, country]
-      .filter(Boolean).join('\n');
-
-    setCheckingOut(true);
+  // Inline confirmation (Alert buttons don't work on web) + real error handling.
+  const removeItem = async (item: CartItem) => {
+    if (!session) return;
+    setConfirmRemoveId(null);
+    setBusyItemId(item.id);
     setError('');
-
-    // Step 1 — create a Razorpay gateway order on the backend
-    const orderRes = await apiCreateShopPaymentOrder(session, addressStr);
-    if (orderRes.error) {
-      setError(orderRes.error);
-      setCheckingOut(false);
+    const res = await apiRemoveCartItem(session, item.id);
+    setBusyItemId(null);
+    if (res.error) {
+      setError(`Could not remove ${item.name}: ${res.error}`);
       return;
     }
-
-    const { keyId, orderId, amount, currency } = orderRes.data!.order;
-
-    // Step 2 — open the backend-hosted Razorpay checkout page in a browser session
-    // The checkout page lives at /api/payments/checkout-page?... and returns
-    // razorpay_order_id, razorpay_payment_id, razorpay_signature via deep-link
-    // callback back to the app.  While waiting, we block the UI.
-    const checkoutUrl =
-      `${API_BASE_URL}/api/payments/checkout-page` +
-      `?key_id=${encodeURIComponent(keyId)}` +
-      `&order_id=${encodeURIComponent(orderId)}` +
-      `&amount=${encodeURIComponent(String(amount))}` +
-      `&currency=${encodeURIComponent(currency)}` +
-      `&name=${encodeURIComponent(fullName)}` +
-      `&return_url=${encodeURIComponent('integratedspiritualapp://payment-callback')}`;
-
-    const result = await WebBrowser.openAuthSessionAsync(checkoutUrl, 'integratedspiritualapp://payment-callback');
-
-    if (result.type !== 'success' || !result.url) {
-      // User cancelled or browser was closed without completing payment
-      setError('Payment was cancelled. Your cart has been saved — tap "Pay" to try again.');
-      setCheckingOut(false);
-      return;
-    }
-
-    // Step 3 — extract Razorpay params from the callback URL
-    let callbackParams: Record<string, string> = {};
-    try {
-      const callbackUrl = new URL(result.url);
-      callbackParams = Object.fromEntries(callbackUrl.searchParams.entries());
-    } catch {
-      setError('Could not read payment response. Please contact support if your payment was deducted.');
-      setCheckingOut(false);
-      return;
-    }
-
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = callbackParams;
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      setError('Payment response was incomplete. Please contact support if your payment was deducted.');
-      setCheckingOut(false);
-      return;
-    }
-
-    // Step 4 — verify the payment on the backend (this also creates the order)
-    const verifyRes = await apiVerifyPayment(session, {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-    });
-
-    setCheckingOut(false);
-
-    if (verifyRes.error) {
-      setError(verifyRes.error);
-      return;
-    }
-
-    Alert.alert(
-      'Order Placed! 🙏',
-      'Your payment was successful. May these items support your spiritual journey.',
-      [{ text: 'View Orders', onPress: () => router.replace('/shop/orders' as any) }]
-    );
+    setItems((prev) => prev.filter((i) => i.id !== item.id));
+    // Re-sync with the server so the cart never shows a stale item.
+    const fresh = await apiGetCart(session);
+    if (fresh.data) setItems(fresh.data.items);
   };
+
+  const validateAddress = (): string | null => {
+    if (!fullName.trim() || !phone.trim() || !line1.trim() || !city.trim() || !stateName.trim() || !pin.trim()) {
+      return 'Please fill in all required delivery fields.';
+    }
+    return null;
+  };
+
+  const handlePay = () => {
+    const err = validateAddress();
+    if (err) { Alert.alert('Missing details', err); return; }
+    setCheckoutOpen(true);
+  };
+
+  const addressStr = [fullName, `Phone: ${phone}`, line1, line2, `${city}, ${stateName} ${pin}`, country]
+    .filter(Boolean).join('\n');
 
   const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Screen>
-          <AppHeader title="Your Cart" subtitle="Review your items and add delivery details." back />
+          <AppHeader title="Your Cart" back />
 
           {error !== '' && (
-            <Card style={styles.errorCard}><Text style={styles.errorText}>{error}</Text></Card>
+            <Card style={styles.errorCard}>
+              <Ionicons name="alert-circle-outline" size={16} color={Palette.danger} />
+              <Text style={styles.errorText}>{error}</Text>
+            </Card>
           )}
 
           {loading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator color={Palette.gold} size="large" />
-            </View>
+            <View style={styles.loadingWrap}><ActivityIndicator color={Palette.gold} size="large" /></View>
           ) : items.length === 0 ? (
-            /* ── Empty cart ── */
             <Card style={styles.emptyCard}>
-              <Text style={styles.emptyIcon}>📦</Text>
-              <Text style={styles.emptyTitle}>Your cart is waiting</Text>
+              <MaterialCommunityIcons name="cart-outline" size={44} color={Palette.stoneLight} />
+              <Text style={styles.emptyTitle}>Your cart is empty</Text>
               <Text style={[ui.small, { textAlign: 'center' }]}>
                 Add something from the shop and it will appear here.
               </Text>
@@ -210,22 +142,27 @@ export default function CartScreen() {
 
               <View style={styles.itemsList}>
                 {items.map((item) => {
-                  const emoji = CATEGORY_EMOJI[item.name] ?? '✨';
                   const busy = busyItemId === item.id;
                   return (
                     <Card key={item.id} style={styles.itemCard}>
                       <View style={styles.itemRow}>
-                        {/* Art */}
+                        {/* Art — real image or icon placeholder */}
                         <View style={styles.itemArt}>
-                          <Text style={styles.itemEmoji}>{emoji}</Text>
+                          {item.image_url ? (
+                            <Image
+                              source={{ uri: resolveMediaUrl(item.image_url) }}
+                              style={{ width: 54, height: 54, borderRadius: 12 }}
+                              contentFit="cover"
+                            />
+                          ) : (
+                            <MaterialCommunityIcons name="package-variant-closed" size={26} color={Palette.stoneLight} />
+                          )}
                         </View>
 
                         {/* Info */}
                         <View style={styles.itemInfo}>
                           <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
                           <Text style={ui.small}>{money(item.price)} each</Text>
-
-                          {/* Quantity control */}
                           <View style={styles.qtyRow}>
                             <Pressable
                               style={[styles.qtyBtn, (item.quantity <= 1 || busy) && styles.qtyBtnDisabled]}
@@ -248,17 +185,31 @@ export default function CartScreen() {
                         {/* Price + remove */}
                         <View style={styles.itemSide}>
                           <Text style={styles.itemTotal}>{money(item.price * item.quantity)}</Text>
-                          <Pressable
-                            style={styles.removeBtn}
-                            onPress={() => removeItem(item)}
-                            disabled={busy}
-                          >
-                            {busy ? (
-                              <ActivityIndicator size="small" color={Palette.danger} />
-                            ) : (
-                              <Text style={styles.removeBtnText}>🗑 Remove</Text>
-                            )}
-                          </Pressable>
+                          {confirmRemoveId === item.id ? (
+                            <View style={styles.confirmRow}>
+                              <Pressable style={styles.keepBtn} onPress={() => setConfirmRemoveId(null)} hitSlop={6} accessibilityRole="button">
+                                <Text style={styles.keepText}>Keep</Text>
+                              </Pressable>
+                              <Pressable style={styles.removeBtn} onPress={() => void removeItem(item)} hitSlop={6} accessibilityRole="button" accessibilityLabel={`Confirm remove ${item.name}`}>
+                                <Text style={styles.removeText}>Remove</Text>
+                              </Pressable>
+                            </View>
+                          ) : (
+                            <Pressable
+                              style={styles.removeBtn}
+                              onPress={() => setConfirmRemoveId(item.id)}
+                              disabled={busy}
+                              hitSlop={8}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Remove ${item.name}`}
+                            >
+                              {busy ? (
+                                <ActivityIndicator size="small" color={Palette.danger} />
+                              ) : (
+                                <Ionicons name="trash-outline" size={18} color={Palette.danger} />
+                              )}
+                            </Pressable>
+                          )}
                         </View>
                       </View>
                     </Card>
@@ -278,7 +229,7 @@ export default function CartScreen() {
                     <Field label="City *" value={city} onChange={setCity} placeholder="City" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Field label="State *" value={state} onChange={setState} placeholder="State" />
+                    <Field label="State *" value={stateName} onChange={setStateName} placeholder="State" />
                   </View>
                 </View>
                 <View style={styles.twoCol}>
@@ -291,7 +242,7 @@ export default function CartScreen() {
                 </View>
               </Card>
 
-              {/* ── Order summary ── */}
+              {/* ── Order summary + Pay button ── */}
               <Card style={styles.summaryCard}>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Subtotal</Text>
@@ -302,26 +253,41 @@ export default function CartScreen() {
                   <Text style={styles.summaryTotalValue}>{money(subtotal)}</Text>
                 </View>
 
-                <Pressable
-                  style={[styles.checkoutBtn, checkingOut && styles.checkoutBtnDisabled]}
-                  onPress={handleCheckout}
-                  disabled={checkingOut}
-                >
-                  {checkingOut ? (
-                    <ActivityIndicator color={Palette.surface} />
-                  ) : (
-                    <Text style={styles.checkoutBtnText}>Pay ₹{subtotal.toLocaleString('en-IN')}</Text>
-                  )}
+                <Pressable style={styles.checkoutBtn} onPress={handlePay}>
+                  <Ionicons name="lock-closed-outline" size={16} color={Palette.surface} />
+                  <Text style={styles.checkoutBtnText}>Pay {money(subtotal)}</Text>
                 </Pressable>
                 <Text style={[ui.small, { textAlign: 'center', marginTop: 4 }]}>
-                  🔒 Secure payment via Razorpay
+                  Secure payment via Razorpay
                 </Text>
               </Card>
             </>
           )}
         </Screen>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+
+      {/* ── Razorpay checkout sheet ── */}
+      <RazorpayCheckoutSheet
+        visible={checkoutOpen}
+        amount={subtotal}
+        merchantName={Brand.name}
+        purpose="Shop order"
+        details={[
+          { label: 'Items', value: `${items.length} item${items.length !== 1 ? 's' : ''}` },
+          { label: 'Delivery to', value: city || 'Your address' },
+        ]}
+        createOrder={() => apiCreateShopPaymentOrder(session!, addressStr)}
+        onPaymentComplete={async () => {
+          Alert.alert(
+            'Order Placed!',
+            'Your payment was successful. May these items support your spiritual journey.',
+            [{ text: 'View Orders', onPress: () => router.replace('/shop/orders' as any) }]
+          );
+        }}
+        token={session ?? null}
+        onClose={() => setCheckoutOpen(false)}
+      />
+    </>
   );
 }
 
@@ -348,29 +314,25 @@ function Field({
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Palette.ivory },
   loadingWrap: { paddingVertical: 48, alignItems: 'center' },
-  errorCard: { backgroundColor: Palette.blush },
-  errorText: { color: Palette.danger, fontSize: 14 },
+  errorCard: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF2F2' },
+  errorText: { color: Palette.danger, fontSize: 14, flex: 1 },
 
   emptyCard: { alignItems: 'center', gap: 14, paddingVertical: 48 },
-  emptyIcon: { fontSize: 52 },
-  emptyTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 20, fontWeight: '700' },
+  emptyTitle: { color: Palette.charcoal, fontFamily: BrandFonts.heading, fontSize: 20 },
   shopBtn: {
-    backgroundColor: Palette.goldDark, paddingHorizontal: 24, paddingVertical: 12,
-    borderRadius: 20, marginTop: 4,
+    backgroundColor: Palette.goldDark, paddingHorizontal: 24,
+    paddingVertical: 12, borderRadius: 20, marginTop: 4,
   },
   shopBtnText: { color: Palette.surface, fontSize: 14, fontWeight: '700' },
 
-  // Items
   itemsList: { gap: 10 },
   itemCard: { gap: 0 },
   itemRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   itemArt: {
-    width: 54, height: 54, borderRadius: 14, backgroundColor: Palette.goldSoft,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: 54, height: 54, borderRadius: 12, backgroundColor: Palette.goldSoft,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden',
   },
-  itemEmoji: { fontSize: 26 },
   itemInfo: { flex: 1, gap: 5 },
   itemName: { color: Palette.charcoal, fontSize: 14, fontWeight: '700', lineHeight: 18 },
   qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 2 },
@@ -382,11 +344,13 @@ const styles = StyleSheet.create({
   qtyBtnText: { color: Palette.goldDark, fontSize: 18, fontWeight: '700' },
   qtyValue: { color: Palette.charcoal, fontSize: 16, fontWeight: '700', minWidth: 24, textAlign: 'center' },
   itemSide: { alignItems: 'flex-end', gap: 8, flexShrink: 0 },
-  itemTotal: { color: Palette.goldDark, fontFamily: 'serif', fontSize: 16, fontWeight: '800' },
-  removeBtn: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 10, backgroundColor: '#FEE2E2' },
-  removeBtnText: { color: Palette.danger, fontSize: 12, fontWeight: '700' },
+  itemTotal: { color: Palette.goldDark, fontFamily: BrandFonts.heading, fontSize: 16 },
+  removeBtn: { minWidth: 36, minHeight: 36, paddingHorizontal: 10, borderRadius: 10, backgroundColor: Palette.dangerSoft, alignItems: 'center', justifyContent: 'center' },
+  removeText: { fontFamily: BrandFonts.bodySemi, fontSize: 13, color: Palette.danger },
+  confirmRow: { flexDirection: 'row', gap: 6 },
+  keepBtn: { minHeight: 36, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: Palette.line, alignItems: 'center', justifyContent: 'center' },
+  keepText: { fontFamily: BrandFonts.bodySemi, fontSize: 13, color: Palette.stone },
 
-  // Address
   addressCard: { gap: 14 },
   twoCol: { flexDirection: 'row', gap: 10 },
   fieldGroup: { gap: 5 },
@@ -397,24 +361,16 @@ const styles = StyleSheet.create({
     color: Palette.charcoal, fontSize: 14,
   },
 
-  // Summary
   summaryCard: { gap: 14 },
-  summaryRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-  },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   summaryLabel: { color: Palette.stone, fontSize: 14 },
   summaryValue: { color: Palette.charcoal, fontSize: 14, fontWeight: '700' },
-  summaryTotal: {
-    paddingTop: 12, borderTopWidth: 1, borderTopColor: Palette.line,
-  },
+  summaryTotal: { paddingTop: 12, borderTopWidth: 1, borderTopColor: Palette.line },
   summaryTotalLabel: { color: Palette.charcoal, fontSize: 16, fontWeight: '700' },
-  summaryTotalValue: {
-    color: Palette.goldDark, fontFamily: 'serif', fontSize: 22, fontWeight: '800',
-  },
+  summaryTotalValue: { color: Palette.goldDark, fontFamily: BrandFonts.heading, fontSize: 22 },
   checkoutBtn: {
-    backgroundColor: Palette.charcoal, borderRadius: 16, paddingVertical: 16,
-    alignItems: 'center', marginTop: 4,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: Palette.charcoal, borderRadius: 16, paddingVertical: 16, marginTop: 4,
   },
-  checkoutBtnDisabled: { opacity: 0.6 },
   checkoutBtnText: { color: Palette.surface, fontSize: 15, fontWeight: '700' },
 });

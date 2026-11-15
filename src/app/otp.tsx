@@ -22,14 +22,12 @@ export default function Otp() {
     if (!code || code.length < 4) return setError('Please enter the verification code.');
 
     setLoading(true);
-    const err = await verifyOtp(email, code.trim());
+    const { error: err, signedIn } = await verifyOtp(email, code.trim());
     setLoading(false);
 
-    if (err) {
-      setError(err);
-    } else {
-      router.replace('/');
-    }
+    if (err) return setError(err);
+    if (signedIn) return router.replace('/');
+    router.replace({ pathname: '/sign-in', params: { verified: '1', email } } as any);
   };
 
   const resend = async () => {
@@ -68,7 +66,7 @@ export default function Otp() {
         {loading ? <ActivityIndicator /> : null}
 
         <View style={authStyles.row}>
-          <Text style={authStyles.plain}>Didn't receive it?</Text>
+          <Text style={authStyles.plain}>Didn’t receive it?</Text>
           <Pressable onPress={resend} disabled={resending}>
             <Text style={authStyles.link}>{resending ? 'Resending…' : 'Resend code'}</Text>
           </Pressable>

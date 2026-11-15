@@ -20,13 +20,14 @@ import {
   SectionTitle,
   ui,
 } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import { Brand, BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import {
   type Course,
   type MeditationStats,
   type SiteAnnouncement,
   apiGetAnnouncement,
+  apiGetBookmarks,
   apiGetCourses,
   apiGetMeditationStats,
   apiGetUnreadCount,
@@ -42,6 +43,7 @@ export default function HomeScreen() {
   const [meditationStats, setMeditationStats] = useState<MeditationStats | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [savedCount, setSavedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [announcement, setAnnouncement] = useState<SiteAnnouncement | null>(null);
   const [announcementVisible, setAnnouncementVisible] = useState(false);
@@ -64,7 +66,11 @@ export default function HomeScreen() {
         apiGetMeditationStats(session),
         apiGetCourses(session),
         apiGetUnreadCount(session),
-      ]).then(([statsRes, coursesRes, countRes]) => {
+        apiGetBookmarks(session),
+      ]).then(([statsRes, coursesRes, countRes, savedRes]) => {
+        if (savedRes.status === 'fulfilled' && savedRes.value.data) {
+          setSavedCount(savedRes.value.data.items.length);
+        }
         if (statsRes.status === 'fulfilled' && statsRes.value.data) {
           setMeditationStats(statsRes.value.data);
         }
@@ -117,7 +123,8 @@ export default function HomeScreen() {
 
       {/* ── Header ── */}
       <AppHeader
-        title="Karma Vajra"
+        title={Brand.name}
+        subtitle={Brand.tagline}
         action={
           <Pressable
             style={styles.bellBtn}
@@ -142,14 +149,12 @@ export default function HomeScreen() {
           <Text style={styles.heroHeading}>
             {greeting},{'\n'}{firstName}
           </Text>
-          <Text style={[ui.body, { marginTop: 4 }]}>
-            Pick up where you left off or find something new for your practice today.
-          </Text>
           <Pressable
             style={styles.heroCta}
             onPress={() => router.push('/sadhana' as any)}
           >
-            <Text style={styles.heroCtaText}>Open Daily Sadhana →</Text>
+            <Text style={styles.heroCtaText}>Open Daily Sadhana</Text>
+            <Ionicons name="arrow-forward" size={16} color={Palette.goldDark} />
           </Pressable>
         </View>
         <View style={styles.heroArt} aria-hidden>
@@ -171,7 +176,7 @@ export default function HomeScreen() {
           />
           <StatCard
             label="Bookmarked"
-            value={String(meditationStats?.bookmarkCount ?? 0)}
+            value={String(savedCount)}
             meta="saved items"
           />
           <StatCard
@@ -209,18 +214,18 @@ export default function HomeScreen() {
                 }
               >
                 <Text style={styles.widgetBtnText}>
-                  {meditationStats.lastPlayed.completed ? 'Play again →' : 'Resume →'}
+                  {meditationStats.lastPlayed.completed ? 'Play again' : 'Resume'}
                 </Text>
               </Pressable>
             </>
           ) : (
             <>
-              <Text style={ui.small}>You haven't started a session yet.</Text>
+              <Text style={ui.small}>You haven’t started a session yet.</Text>
               <Pressable
                 style={styles.widgetBtn}
-                onPress={() => router.push('/meditations' as any)}
+                onPress={() => router.push('/(tabs)/learn?segment=meditations' as any)}
               >
-                <Text style={styles.widgetBtnText}>Explore meditations →</Text>
+                <Text style={styles.widgetBtnText}>Explore meditations</Text>
               </Pressable>
             </>
           )}
@@ -249,17 +254,17 @@ export default function HomeScreen() {
                 style={styles.widgetBtn}
                 onPress={() => router.push(`/courses/${mostRecentCourse.id}` as any)}
               >
-                <Text style={styles.widgetBtnText}>Continue course →</Text>
+                <Text style={styles.widgetBtnText}>Continue course</Text>
               </Pressable>
             </>
           ) : (
             <>
-              <Text style={ui.small}>You haven't enrolled in any courses yet.</Text>
+              <Text style={ui.small}>You haven’t enrolled in any courses yet.</Text>
               <Pressable
                 style={styles.widgetBtn}
                 onPress={() => router.push('/courses' as any)}
               >
-                <Text style={styles.widgetBtnText}>Browse courses →</Text>
+                <Text style={styles.widgetBtnText}>Browse courses</Text>
               </Pressable>
             </>
           )}
@@ -273,14 +278,11 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.widgetTitle}>Saved for Later</Text>
           </View>
-          <Text style={ui.small}>
-            Keep your favourite courses, meditations, and products close at hand.
-          </Text>
           <Pressable
             style={[styles.widgetBtn, styles.widgetBtnOutline]}
             onPress={() => router.push('/bookmarks' as any)}
           >
-            <Text style={styles.widgetBtnOutlineText}>View saved items →</Text>
+            <Text style={styles.widgetBtnOutlineText}>View saved items</Text>
           </Pressable>
         </Card>
 
@@ -292,14 +294,11 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.widgetTitle}>Divine Shop</Text>
           </View>
-          <Text style={ui.small}>
-            Explore meaningful items chosen to support your spiritual journey.
-          </Text>
           <Pressable
             style={[styles.widgetBtn, styles.widgetBtnOutline]}
             onPress={() => router.push('/shop' as any)}
           >
-            <Text style={styles.widgetBtnOutlineText}>Explore products →</Text>
+            <Text style={styles.widgetBtnOutlineText}>Explore products</Text>
           </Pressable>
         </Card>
 
@@ -313,7 +312,7 @@ export default function HomeScreen() {
             <Text style={styles.sadhanaTitle}>Daily Sadhana</Text>
             <Text style={ui.small}>Complete today's practice to keep your streak.</Text>
           </View>
-          <Text style={styles.sadhanaArrow}>›</Text>
+          <Ionicons name="chevron-forward" size={20} color={Palette.goldDark} />
         </Card>
       </Pressable> */}
     </Screen>
@@ -376,7 +375,7 @@ const styles = StyleSheet.create({
   },
   heroHeading: {
     color: Palette.charcoal,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 22,
     fontWeight: '700',
     lineHeight: 28,
@@ -384,6 +383,9 @@ const styles = StyleSheet.create({
   heroCta: {
     marginTop: 6,
     alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   heroCtaText: {
     color: Palette.goldDark,
@@ -416,7 +418,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     color: Palette.goldDark,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 24,
     fontWeight: '700',
   },
@@ -448,7 +450,7 @@ const styles = StyleSheet.create({
   },
   widgetValue: {
     color: Palette.charcoal,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 17,
     fontWeight: '700',
     lineHeight: 22,
@@ -456,12 +458,14 @@ const styles = StyleSheet.create({
   widgetBtn: {
     marginTop: 4,
     alignSelf: 'flex-start',
-    backgroundColor: Palette.charcoal,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: Palette.goldDark,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 14,
   },
-  widgetBtnText: { color: Palette.surface, fontSize: 13, fontWeight: '700' },
+  widgetBtnText: { color: Palette.goldDark, fontSize: 13, fontWeight: '700' },
   widgetBtnOutline: {
     backgroundColor: 'transparent',
     borderWidth: 1,
@@ -480,7 +484,7 @@ const styles = StyleSheet.create({
   sadhanaEyebrow: { color: Palette.gold, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   sadhanaTitle: {
     color: '#F0E6CC',
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 18,
     fontWeight: '700',
   },
@@ -505,7 +509,7 @@ const styles = StyleSheet.create({
   },
   announcementTitle: {
     color: Palette.charcoal,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 20,
     fontWeight: '700',
     lineHeight: 26,

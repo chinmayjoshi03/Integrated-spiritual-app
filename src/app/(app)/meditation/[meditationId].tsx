@@ -15,24 +15,27 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AppIcon, Card } from '@/components/karma-ui';
+import { Card } from '@/components/karma-ui';
 import RazorpayCheckoutSheet from '@/components/RazorpayCheckoutSheet';
-import { Palette } from '@/constants/theme';
+import { Brand, BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import {
   type Meditation,
   apiCreateCoursePaymentOrder,
   apiGetMeditationDetail,
   apiSaveMeditationProgress,
+  apiGetMeditationBookmarkStatus,
   apiToggleMeditationBookmark,
   getAudioUrl,
 } from '@/services/api';
 
-const THEMES: Record<string, { bg: string; text: string; sub: string; accent: string; circle: string }> = {
-  Guided: { bg: '#0F172A', text: '#F8FAFC', sub: '#94A3B8', accent: '#6366F1', circle: 'rgba(99, 102, 241, 0.25)' },
-  Sound: { bg: '#1E1B4B', text: '#FAF5FF', sub: '#D8B4FE', accent: '#F59E0B', circle: 'rgba(245, 158, 11, 0.25)' },
-  Breathwork: { bg: '#064E3B', text: '#ECFDF5', sub: '#A7F3D0', accent: '#10B981', circle: 'rgba(16, 185, 129, 0.25)' },
-  Ambient: { bg: '#2E1065', text: '#FAF5FF', sub: '#DDD6FE', accent: '#A855F7', circle: 'rgba(168, 85, 247, 0.25)' },
+// One warm theme for every category — the website's colours (ivory background, gold accent).
+const PLAYER_THEME = {
+  bg: Palette.ivory,
+  text: Palette.charcoal,
+  sub: Palette.stone,
+  accent: Palette.gold,
+  circle: Palette.goldSelected,
 };
 
 function formatTime(seconds: number): string {
@@ -57,6 +60,7 @@ export default function MeditationPlayerScreen() {
   const [isCompleted, setIsCompleted] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
+  const [bookmarkBusy, setBookmarkBusy] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   const isPlaying = status.playing ?? false;
@@ -106,9 +110,10 @@ export default function MeditationPlayerScreen() {
     } else {
       setMeditation(res.data.meditation);
       setIsCompleted(res.data.meditation.completed);
-      // Load bookmark state
-      apiToggleMeditationBookmark(session, Number(meditationId))
-        .catch(() => undefined);
+      // Read (don't toggle!) the current bookmark state.
+      apiGetMeditationBookmarkStatus(session, Number(meditationId)).then((b) => {
+        setIsBookmarked(Boolean(b.data?.bookmarked));
+      });
     }
     setLoading(false);
   }, [session, meditationId]);
@@ -179,7 +184,7 @@ export default function MeditationPlayerScreen() {
     player.seekTo(target);
   };
 
-  const theme = meditation ? THEMES[meditation.category] || THEMES.Guided : THEMES.Guided;
+  const theme = PLAYER_THEME;
 
   if (loading) {
     return (
@@ -239,7 +244,6 @@ export default function MeditationPlayerScreen() {
                   View course{meditation.course_price && Number(meditation.course_price) > 0
                     ? ` and pay ₹${Number(meditation.course_price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
                     : ''}
-                   →
                 </Text>
               </Pressable>
             )}
@@ -251,7 +255,7 @@ export default function MeditationPlayerScreen() {
           <RazorpayCheckoutSheet
             visible={checkoutOpen}
             amount={Number(meditation.course_price ?? 0)}
-            merchantName="The Karma Vajra"
+            merchantName={Brand.name}
             purpose="Course enrollment"
             details={[
               { label: 'Course', value: meditation.course_title ?? 'Course' },
@@ -262,7 +266,7 @@ export default function MeditationPlayerScreen() {
               // Reload the meditation — it will now be unlocked
               loadDetail();
             }}
-            token={session}
+            token={session ?? null}
             onClose={() => setCheckoutOpen(false)}
           />
         )}
@@ -275,22 +279,27 @@ export default function MeditationPlayerScreen() {
       {/* ── Top Bar ── */}
       <View style={styles.topBar}>
         <Pressable onPress={() => router.back()} style={styles.iconBtn}>
-          <Text style={[styles.closeIcon, { color: theme.text }]}>✕</Text>
+          <Ionicons name="close" size={22} color={theme.text} />
         </Pressable>
 
-        <View style={[styles.tagPill, { backgroundColor: theme.circle }]}>
-          <Text style={[styles.tagText, { color: theme.accent }]}>{meditation.category.toUpperCase()}</Text>
-        </View>
 
         <Pressable
           style={styles.iconBtn}
           onPress={async () => {
-            if (!session) return;
+            if (!session || bookmarkBusy) return;
+            const previous = isBookmarked;
+            setIsBookmarked(!previous); // instant feedback
+            setBookmarkBusy(true);
             const res = await apiToggleMeditationBookmark(session, meditation.id);
-            if (res.data) setIsBookmarked(res.data.bookmarked);
+            setBookmarkBusy(false);
+            if (res.error || !res.data) setIsBookmarked(previous);
+            else setIsBookmarked(res.data.bookmarked);
           }}
+          accessibilityRole="button"
+          accessibilityLabel={isBookmarked ? 'Remove bookmark' : 'Bookmark this meditation'}
+          hitSlop={8}
         >
-          <Text style={{ fontSize: 22 }}>{isBookmarked ? '🔖' : '🔖'}</Text>
+          <Ionicons name={isBookmarked ? 'bookmark' : 'bookmark-outline'} size={22} color={theme.text} />
         </Pressable>
       </View>
 
@@ -306,9 +315,11 @@ export default function MeditationPlayerScreen() {
           ]}
         />
         <View style={[styles.innerCircle, { backgroundColor: theme.accent }]}>
-          <Text style={styles.centerIcon}>
-            {meditation.category === 'Sound' ? '🎵' : meditation.category === 'Breathwork' ? '🫁' : meditation.category === 'Ambient' ? '✨' : '🧘'}
-          </Text>
+          <Ionicons
+            name={meditation.category === 'Sound' ? 'musical-notes' : meditation.category === 'Breathwork' ? 'leaf' : meditation.category === 'Ambient' ? 'sparkles' : 'flower'}
+            size={44}
+            color={Palette.onAccent}
+          />
         </View>
       </View>
 
@@ -339,7 +350,7 @@ export default function MeditationPlayerScreen() {
         </Pressable>
 
         <Pressable style={[styles.mainPlayBtn, { backgroundColor: theme.accent }]} onPress={togglePlayPause}>
-          <Text style={styles.mainPlayIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
+          <Ionicons name={isPlaying ? 'pause' : 'play'} size={30} color={Palette.onAccent} style={isPlaying ? undefined : { marginLeft: 3 }} />
         </Pressable>
 
         <Pressable style={styles.secBtn} onPress={() => seekRelative(15)}>
@@ -351,10 +362,10 @@ export default function MeditationPlayerScreen() {
       <Modal visible={showCompleteModal} transparent animationType="fade">
         <View style={styles.modalBg}>
           <Card style={styles.modalCard}>
-            <Text style={styles.modalSymbol}>🌸</Text>
+            <Ionicons name="flower-outline" size={44} color={Palette.goldDark} />
             <Text style={styles.modalTitle}>Session Complete</Text>
             <Text style={styles.modalBody}>
-              You have completed "{meditation.title}". Take a deep breath and carry this peace into your day.
+              You have completed “{meditation.title}”. Take a deep breath and carry this peace into your day.
             </Text>
 
             <Pressable
@@ -384,10 +395,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
   },
-  iconBtn: { padding: 8 },
+  iconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Palette.surface, borderWidth: 1, borderColor: Palette.line },
   closeIcon: { fontSize: 22, fontWeight: '600' },
   tagPill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 },
-  tagText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  tagText: { fontFamily: BrandFonts.bodySemi, fontSize: 11, letterSpacing: 1 },
 
   // Visualizer
   visualizerWrap: {
@@ -410,24 +421,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     elevation: 8,
     ...Platform.select({
-      web: { boxShadow: '0px 4px 10px rgba(0,0,0,0.3)' },
-      default: { shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+      web: { boxShadow: '0px 6px 18px rgba(166,127,28,0.30)' },
+      default: { shadowColor: Palette.goldDark, shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } },
     }),
   },
   centerIcon: { fontSize: 44 },
 
   // Info
   infoWrap: { paddingHorizontal: 28, alignItems: 'center', gap: 6 },
-  title: { fontFamily: 'serif', fontSize: 24, fontWeight: '700', textAlign: 'center' },
-  guide: { fontSize: 14, fontWeight: '600', marginBottom: 4 },
-  desc: { fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  title: { fontFamily: BrandFonts.heading, fontSize: 24, textAlign: 'center' },
+  guide: { fontFamily: BrandFonts.bodySemi, fontSize: 14, marginBottom: 4 },
+  desc: { fontFamily: BrandFonts.body, fontSize: 14, textAlign: 'center', lineHeight: 20 },
 
   // Slider
   sliderWrap: { paddingHorizontal: 28, marginTop: 32, gap: 8 },
   trackBg: { height: 6, borderRadius: 3, overflow: 'hidden' },
   trackFill: { height: '100%', borderRadius: 3 },
   timeRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  timeText: { fontSize: 12, fontWeight: '600' },
+  timeText: { fontFamily: BrandFonts.bodyMedium, fontSize: 12 },
 
   // Controls
   controlsRow: {
@@ -441,11 +452,13 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: Palette.surface,
+    borderWidth: 1,
+    borderColor: Palette.line,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  secBtnText: { fontSize: 13, fontWeight: '700' },
+  secBtnText: { fontFamily: BrandFonts.bodySemi, fontSize: 13 },
   mainPlayBtn: {
     width: 72,
     height: 72,
@@ -457,10 +470,10 @@ const styles = StyleSheet.create({
   mainPlayIcon: { color: '#FFFFFF', fontSize: 24, marginLeft: 2 },
 
   // Modal
-  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  modalBg: { flex: 1, backgroundColor: 'rgba(63,51,40,0.55)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   modalCard: { backgroundColor: Palette.surface, alignItems: 'center', gap: 14, padding: 24, borderRadius: 24, width: '100%' },
   modalSymbol: { fontSize: 48 },
-  modalTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 22, fontWeight: '700' },
+  modalTitle: { color: Palette.charcoal, fontFamily: BrandFonts.heading, fontSize: 22 },
   modalBody: { color: Palette.stone, fontSize: 14, textAlign: 'center', lineHeight: 20 },
   modalDoneBtn: {
     backgroundColor: Palette.goldDark,
@@ -490,7 +503,7 @@ const styles = StyleSheet.create({
   wallBack: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   wallBackText: { color: Palette.charcoal, fontSize: 15, fontWeight: '600' },
   wallContent: { padding: 24, gap: 6 },
-  wallTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 26, fontWeight: '700', lineHeight: 32 },
+  wallTitle: { color: Palette.charcoal, fontFamily: BrandFonts.heading, fontSize: 26, lineHeight: 32 },
   wallSubtitle: { color: Palette.stone, fontSize: 14, marginBottom: 24 },
   wallCard: {
     backgroundColor: Palette.surface,
@@ -501,7 +514,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   wallEyebrow: { color: Palette.goldDark, fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
-  wallHeading: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 20, fontWeight: '700', lineHeight: 26 },
+  wallHeading: { color: Palette.charcoal, fontFamily: BrandFonts.heading, fontSize: 20, lineHeight: 26 },
   wallBody: { color: Palette.stone, fontSize: 14, lineHeight: 21 },
   wallBold: { color: Palette.charcoal, fontWeight: '700' },
   wallCta: {

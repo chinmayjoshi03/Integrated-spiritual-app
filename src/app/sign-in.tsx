@@ -1,6 +1,6 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { AuthShell, authStyles } from '@/components/auth-shell';
 import { ActionButton, Field } from '@/components/karma-ui';
@@ -8,7 +8,9 @@ import { useSession } from '@/context/auth-context';
 
 export default function SignIn() {
   const { signIn } = useSession();
-  const [email, setEmail] = useState('');
+  const params = useLocalSearchParams<{ verified?: string; email?: string }>();
+  const justVerified = params.verified === '1';
+  const [email, setEmail] = useState(params.email ?? '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -30,13 +32,14 @@ export default function SignIn() {
   };
 
   return (
-    <AuthShell title="Welcome back" subtitle="Return to your inner balance.">
+    <AuthShell title="Welcome back" subtitle="Continue your journey inward.">
       <View style={authStyles.form}>
         {error ? <Text style={authStyles.error}>{error}</Text> : null}
-        
+        {justVerified && !error ? <Text style={authStyles.success}>Email verified. Sign in to continue.</Text> : null}
+
         <Field
           label="Email address"
-          placeholder="user@spiritual.com"
+          placeholder="you@example.com"
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
@@ -64,19 +67,10 @@ export default function SignIn() {
           <Text style={[authStyles.link, { textAlign: 'right' }]}>Forgot password?</Text>
         </Pressable>
 
-        <ActionButton label={loading ? 'Signing in…' : 'Sign in'} onPress={submit} disabled={loading} />
-        {loading ? <ActivityIndicator style={{ marginVertical: 8 }} /> : null}
-
-        <View style={authStyles.divider}>
-          <View style={authStyles.line} />
-          <Text style={authStyles.dividerText}>OR</Text>
-          <View style={authStyles.line} />
-        </View>
-
-        <ActionButton variant="outline" label="Continue with mobile OTP" onPress={() => router.push('/mobile-login' as any)} />
+        <ActionButton label={loading ? 'Signing in…' : 'Sign in'} onPress={submit} loading={loading} />
 
         <View style={authStyles.row}>
-          <Text style={authStyles.plain}>New to Karma Vajra?</Text>
+          <Text style={authStyles.plain}>New to The Karm Vajra?</Text>
           <Pressable onPress={() => router.push('/sign-up')}>
             <Text style={authStyles.link}>Create an account</Text>
           </Pressable>

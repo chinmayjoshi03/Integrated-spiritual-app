@@ -12,7 +12,7 @@
  *   <RazorpayCheckoutSheet
  *     visible={checkoutOpen}
  *     amount={Number(course.price)}
- *     merchantName="The Karma Vajra"
+ *     merchantName="The Karm Vajra"
  *     purpose="Course enrollment"
  *     details={[
  *       { label: 'Course',     value: course.title },
@@ -68,6 +68,18 @@ export interface RazorpayCheckoutSheetProps {
   onClose: () => void;
   /** Text shown on the button while processing */
   processingLabel?: string;
+}
+
+/** Parse `?a=1&b=2` from a deep-link URL (the URL polyfill on Hermes is incomplete). */
+function parseQuery(url: string): Record<string, string> {
+  const query = url.split('?')[1]?.split('#')[0] ?? '';
+  const out: Record<string, string> = {};
+  for (const part of query.split('&')) {
+    if (!part) continue;
+    const [k, ...rest] = part.split('=');
+    out[decodeURIComponent(k)] = decodeURIComponent(rest.join('=').replace(/\+/g, ' '));
+  }
+  return out;
 }
 
 const money = (value: number) =>
@@ -172,8 +184,7 @@ export default function RazorpayCheckoutSheet({
     // 3. Parse callback params from the deep-link URL
     let callbackParams: Record<string, string> = {};
     try {
-      const url = new URL(result.url);
-      callbackParams = Object.fromEntries(url.searchParams.entries());
+      callbackParams = parseQuery(result.url);
     } catch {
       setError('Could not read payment response. Contact support if payment was deducted.');
       setStarting(false);
@@ -271,7 +282,7 @@ export default function RazorpayCheckoutSheet({
               </View>
             </View>
             <Text style={styles.hint}>
-              Choose a method in Razorpay's secure checkout. Test Mode won't charge real money.
+              Choose a method in Razorpay’s secure checkout. Test Mode won’t charge real money.
             </Text>
 
             {/* Error */}
@@ -300,7 +311,7 @@ export default function RazorpayCheckoutSheet({
                 disabled={isProcessing || displayAmount === null}
               >
                 {isProcessing ? (
-                  <ActivityIndicator color="#fff" size="small" />
+                  <ActivityIndicator color={Palette.onAccent} size="small" />
                 ) : (
                   <Text style={styles.ctaBtnText}>
                     {displayAmount === null
@@ -331,7 +342,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Palette.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingBottom: Platform.OS === 'ios' ? 34 : 20,
@@ -351,7 +362,7 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0EDE8',
+    borderBottomColor: Palette.line,
   },
   brandName: { color: '#072654', fontSize: 18, fontWeight: '800' },
   brandSub: { color: '#888', fontSize: 12, marginTop: 1 },
@@ -365,7 +376,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0EDE8',
+    borderBottomColor: Palette.line,
   },
   merchantIcon: {
     width: 40,
@@ -386,7 +397,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0EDE8',
+    borderBottomColor: Palette.line,
   },
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   detailLabel: { color: Palette.stone, fontSize: 13 },
@@ -401,7 +412,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     borderWidth: 1,
-    borderColor: '#E0DBD4',
+    borderColor: Palette.line,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -414,7 +425,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: Palette.dangerSoft,
     borderRadius: 10,
     padding: 12,
   },
@@ -422,7 +433,7 @@ const styles = StyleSheet.create({
 
   // CTA
   ctaBtn: {
-    backgroundColor: '#E8A009',
+    backgroundColor: Palette.gold,
     borderRadius: 10,
     minHeight: 50,
     alignItems: 'center',
@@ -430,13 +441,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   ctaBtnDisabled: { opacity: 0.5 },
-  ctaBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  ctaBtnText: { color: Palette.onAccent, fontSize: 16, fontWeight: '700' },
   ctaBtnOutline: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#E8A009',
+    borderColor: Palette.gold,
   },
-  ctaBtnOutlineText: { color: '#E8A009', fontSize: 15, fontWeight: '700' },
+  ctaBtnOutlineText: { color: Palette.gold, fontSize: 15, fontWeight: '700' },
 
   // Footer
   footer: {

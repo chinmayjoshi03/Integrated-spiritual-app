@@ -1,564 +1,267 @@
-import { router, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { AppHeader, Card, Screen, SectionTitle, ui } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import RazorpayCheckoutSheet from '@/components/RazorpayCheckoutSheet';
+import {
+  ActionButton,
+  AppHeader,
+  Card,
+  EmptyState,
+  Eyebrow,
+  Field,
+  Loading,
+  Notice,
+  Screen,
+  SectionTitle,
+  StatusBadge,
+  ui,
+} from '@/components/karma-ui';
+import { Brand, BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
+import { type ReceiptData, shareDonationReceipt } from '@/lib/documents';
 import {
   type DonationRecord,
-  type VolunteerOpportunity,
-  apiApplyVolunteer,
-  apiCreateDonation,
+  type VerifiedPayment,
+  apiCreateDonationPaymentOrder,
   apiGetMyDonations,
-  apiGetVolunteerOpportunities,
 } from '@/services/api';
 
-type Segment = 'donate' | 'seva';
-
 const PRESET_AMOUNTS = [250, 500, 1000, 2500];
-
-const money = (amount: number) =>
-  `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-
+const money = (amount: number) => `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const formatDate = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+const receiptNumberFor = (id: number) => `KVU-${String(id).padStart(6, '0')}`;
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  completed: { bg: '#D1FAE5', text: '#065F46' },
-  pending:   { bg: '#FEF3C7', text: '#92400E' },
-  failed:    { bg: '#FEE2E2', text: '#991B1B' },
-};
+type Step = 'home' | 'form' | 'receipt';
 
 export default function GiveScreen() {
-  const [activeSegment, setActiveSegment] = useState<Segment>('donate');
+  const { session, user } = useSession();
 
-  return (
-    <Screen>
-      <AppHeader title="Give & Serve" subtitle="Donations and seva opportunities" />
-
-      {/* Segment controller */}
-      <View style={styles.segmentContainer}>
-        <Pressable
-          style={[styles.segBtn, activeSegment === 'donate' && styles.segBtnActive]}
-          onPress={() => setActiveSegment('donate')}
-        >
-          <Text style={[styles.segText, activeSegment === 'donate' && styles.segTextActive]}>
-            🤲 Donate
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.segBtn, activeSegment === 'seva' && styles.segBtnActive]}
-          onPress={() => setActiveSegment('seva')}
-        >
-          <Text style={[styles.segText, activeSegment === 'seva' && styles.segTextActive]}>
-            🤝 Seva
-          </Text>
-        </Pressable>
-      </View>
-
-      {activeSegment === 'donate' && <DonateSection />}
-      {activeSegment === 'seva' && <SevaSection />}
-    </Screen>
-  );
-}
-
-// ─── Donate Section ────────────────────────────────────────────────────────────
-
-function DonateSection() {
-  const { session } = useSession();
-
-  const [amount, setAmount] = useState('500');
-  const [message, setMessage] = useState('');
-  const [isAnonymous, setIsAnonymous] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [step, setStep] = useState<Step>('home');
   const [donations, setDonations] = useState<DonationRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [historyError, setHistoryError] = useState('');
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!session) return;
-      apiGetMyDonations(session)
-        .then((res) => {
-          if (res.data) setDonations(res.data.donations);
-        })
-        .finally(() => setLoading(false));
-    }, [session])
-  );
+  const [amount, setAmount] = useState('500');
+  const [purpose, setPurpose] = useState('General support');
+  const [address, setAddress] = useState('');
+  const [message, setMessage] = useState('');
+  const [formError, setFormError] = useState('');
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
-  const handleSubmit = async () => {
-    const numAmount = Number(amount);
-    if (!numAmount || numAmount < 1) {
-      setError('Please enter a valid donation amount.');
-      return;
-    }
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState('');
+
+  const loadHistory = useCallback(async () => {
     if (!session) return;
+    const res = await apiGetMyDonations(session);
+    if (res.error) setHistoryError(res.error);
+    else { setHistoryError(''); setDonations(res.data?.donations ?? []); }
+    setLoading(false);
+  }, [session]);
 
-    setError('');
-    setNotice('');
-    setSubmitting(true);
+  useFocusEffect(useCallback(() => { void loadHistory(); }, [loadHistory]));
 
-    const res = await apiCreateDonation(session, {
-      amount: numAmount,
-      message: message.trim() || undefined,
-      isAnonymous,
+  const openCheckout = () => {
+    setFormError('');
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value < 1) return setFormError('Please enter a donation amount of at least ₹1.');
+    if (value > 10_000_000) return setFormError('Please enter an amount up to ₹1,00,00,000.');
+    if (!purpose.trim()) return setFormError('Please tell us what you would like to support.');
+    if (!address.trim()) return setFormError('Please enter your address for the receipt.');
+    setCheckoutOpen(true);
+  };
+
+  const handlePaymentComplete = async (payment: VerifiedPayment) => {
+    if (payment.purpose !== 'donation' || !payment.referenceId) return;
+    const paidAt = payment.paidAt || new Date().toISOString();
+    setReceipt({
+      receiptNumber: payment.receiptNumber || receiptNumberFor(payment.referenceId),
+      donorName: payment.donor?.name || user?.name || 'Donor',
+      donorEmail: payment.donor?.email || user?.email,
+      donorPhone: payment.donor?.phone ?? user?.phoneNumber ?? null,
+      amount: Number(payment.amount) || Number(amount),
+      purpose: payment.donationPurpose || purpose,
+      date: paidAt,
     });
+    setStep('receipt');
+    setMessage('');
+    setAddress('');
+    void loadHistory();
+  };
 
-    setSubmitting(false);
+  const viewReceipt = (d: DonationRecord) => {
+    setPdfError('');
+    setReceipt({
+      receiptNumber: receiptNumberFor(d.id),
+      donorName: d.donor_name || user?.name || 'Donor',
+      donorEmail: d.donor_email || user?.email,
+      donorPhone: d.donor_phone ?? user?.phoneNumber ?? null,
+      amount: d.amount,
+      purpose: d.purpose || 'General support',
+      date: d.confirmed_at || d.created_at,
+    });
+    setStep('receipt');
+  };
 
-    if (res.error) {
-      setError(res.error);
-    } else {
-      setNotice(`Thank you for your generous offering of ${money(numAmount)}. Your donation has been received.`);
-      setAmount('500');
-      setMessage('');
-      setIsAnonymous(false);
-      // Refresh history
-      apiGetMyDonations(session).then((r) => {
-        if (r.data) setDonations(r.data.donations);
-      });
+  const savePdf = async () => {
+    if (!receipt) return;
+    setPdfBusy(true);
+    setPdfError('');
+    try {
+      await shareDonationReceipt(receipt);
+    } catch {
+      setPdfError('Could not create the receipt PDF. Please try again.');
     }
+    setPdfBusy(false);
   };
 
-  return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      {/* Welcome section */}
-      <Card style={styles.welcomeCard}>
-        <View style={styles.welcomeIconRow}>
-          <Text style={styles.welcomeIcon}>🤲</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.welcomeEyebrow}>GENERAL FUND</Text>
-            <Text style={styles.welcomeHeading}>Every contribution supports our community</Text>
+  // ── Receipt ──
+  if (step === 'receipt' && receipt) {
+    return <Screen>
+      <AppHeader title="Donation receipt" />
+      <Card style={styles.receipt}>
+        <View style={styles.receiptHead}>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={styles.receiptBrand}>{Brand.name}</Text>
+            <Eyebrow>AUTOMATED DONATION RECEIPT</Eyebrow>
+            <Text style={styles.receiptTitle}>Thank you for your contribution</Text>
           </View>
+          <Text style={styles.receiptNumber}>{receipt.receiptNumber}</Text>
         </View>
-        <Text style={ui.small}>
-          All contributions support the organisation as a whole and help sustain teachings, events, and community care.
-        </Text>
+        <ReceiptRow label="Donor name" value={receipt.donorName} />
+        <ReceiptRow label="Amount" value={money(receipt.amount)} />
+        <ReceiptRow label="Purpose" value={receipt.purpose} />
+        <ReceiptRow label="Date" value={formatDate(receipt.date)} />
+        <Text style={ui.small}>This is an automated receipt. No signature is required.</Text>
       </Card>
+      {pdfError ? <Notice tone="error">{pdfError}</Notice> : null}
+      <ActionButton icon="document-text-outline" label="Download receipt (PDF)" onPress={savePdf} loading={pdfBusy} />
+      <ActionButton variant="outline" icon="arrow-back" label="Back to donations" onPress={() => setStep('home')} />
+    </Screen>;
+  }
 
-      {/* Success notice */}
-      {notice !== '' && (
-        <Card style={styles.noticeCard}>
-          <Text style={styles.noticeText}>✓ {notice}</Text>
-        </Card>
-      )}
-
-      {/* Donation form */}
-      <SectionTitle>Make a contribution</SectionTitle>
-      <Card style={styles.formCard}>
-        <Text style={styles.fieldLabel}>Donation amount (₹)</Text>
-
-        {/* Preset buttons */}
-        <View style={styles.presetsRow}>
-          {PRESET_AMOUNTS.map((preset) => (
-            <Pressable
-              key={preset}
-              style={[
-                styles.presetBtn,
-                Number(amount) === preset && styles.presetBtnActive,
-              ]}
-              onPress={() => setAmount(String(preset))}
-            >
-              <Text
-                style={[
-                  styles.presetText,
-                  Number(amount) === preset && styles.presetTextActive,
-                ]}
-              >
-                {money(preset)}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {/* Custom amount */}
-        <TextInput
-          style={styles.amountInput}
-          keyboardType="numeric"
-          value={amount}
-          onChangeText={setAmount}
-          placeholder="Enter custom amount"
-          placeholderTextColor={Palette.stoneLight}
-        />
-
-        <Text style={styles.fieldLabel}>Message (optional)</Text>
-        <TextInput
-          style={styles.messageInput}
-          value={message}
-          onChangeText={setMessage}
-          placeholder="Add a note for the organisation"
-          placeholderTextColor={Palette.stoneLight}
-          multiline
-          maxLength={500}
-        />
-
-        {/* Anonymous toggle */}
-        <View style={styles.anonRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.anonLabel}>Keep my name private</Text>
-            <Text style={ui.small}>Admins can still see your account.</Text>
-          </View>
-          <Switch
-            value={isAnonymous}
-            onValueChange={setIsAnonymous}
-            trackColor={{ false: Palette.line, true: Palette.gold }}
-            thumbColor={Palette.surface}
-          />
-        </View>
-
-        {error !== '' && <Text style={styles.errorText}>{error}</Text>}
-
-        <Text style={[ui.small, { marginTop: 4 }]}>
-          Payment processing will start once Razorpay is connected.
-        </Text>
-
-        <Pressable
-          style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
-          onPress={handleSubmit}
-          disabled={submitting}
-        >
-          {submitting ? (
-            <ActivityIndicator color={Palette.surface} />
-          ) : (
-            <Text style={styles.submitBtnText}>Continue to secure payment</Text>
-          )}
+  // ── Donation form ──
+  if (step === 'form') {
+    return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Screen>
+        <Pressable onPress={() => setStep('home')} style={styles.back} accessibilityRole="button">
+          <Ionicons name="arrow-back" size={18} color={Palette.goldDark} />
+          <Text style={styles.backText}>Back</Text>
         </Pressable>
-      </Card>
-
-      {/* Donation history */}
-      <SectionTitle>Your giving history</SectionTitle>
-      {loading ? (
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator color={Palette.gold} />
+        <View style={{ gap: 6 }}>
+          <Eyebrow>DONATION DETAILS</Eyebrow>
+          <Text style={ui.title}>Make your contribution</Text>
         </View>
-      ) : donations.length === 0 ? (
-        <Card style={styles.emptyCard}>
-          <Text style={styles.emptyIcon}>🤍</Text>
-          <Text style={styles.emptyTitle}>No donations yet</Text>
-          <Text style={[ui.small, { textAlign: 'center' }]}>
-            Your donation records will appear here.
-          </Text>
-        </Card>
-      ) : (
-        <View style={styles.historyList}>
-          {donations.map((d) => {
-            const statusStyle = STATUS_COLORS[d.status] ?? STATUS_COLORS.pending;
-            return (
-              <Card key={d.id} style={styles.historyItem}>
-                <View style={styles.historyRow}>
-                  <View style={{ flex: 1, gap: 3 }}>
-                    <Text style={styles.historyTitle}>Donation to the organisation</Text>
-                    <Text style={ui.small}>{formatDate(d.created_at)}</Text>
-                    {d.message ? (
-                      <Text style={ui.small}>"{d.message}"</Text>
-                    ) : null}
-                  </View>
-                  <View style={styles.historyRight}>
-                    <Text style={styles.historyAmount}>{money(d.amount)}</Text>
-                    <View
-                      style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}
-                    >
-                      <Text style={[styles.statusText, { color: statusStyle.text }]}>
-                        {d.status}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              </Card>
-            );
-          })}
-        </View>
-      )}
-    </KeyboardAvoidingView>
-  );
-}
 
-// ─── Seva Section ──────────────────────────────────────────────────────────────
-
-function SevaSection() {
-  const { session } = useSession();
-  const [opportunities, setOpportunities] = useState<VolunteerOpportunity[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!session) return;
-      setLoading(true);
-      apiGetVolunteerOpportunities(session)
-        .then((res) => {
-          if (res.data) setOpportunities(res.data.opportunities);
-        })
-        .finally(() => setLoading(false));
-    }, [session])
-  );
-
-  const handleApply = async (opp: VolunteerOpportunity) => {
-    if (!session || opp.applied_by_user) return;
-
-    Alert.alert(
-      'Offer Seva',
-      `Would you like to register your interest for "${opp.title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            setOpportunities((prev) =>
-              prev.map((o) =>
-                o.id === opp.id
-                  ? { ...o, applied_by_user: true, current_volunteers: o.current_volunteers + 1 }
-                  : o
-              )
-            );
-            await apiApplyVolunteer(session, opp.id);
-            Alert.alert('Seva Application Sent', 'Thank you for offering your time and skills!');
-          },
-        },
-      ]
-    );
-  };
-
-  return (
-    <View style={{ gap: 12 }}>
-      <Card style={styles.welcomeCard}>
-        <View style={styles.welcomeIconRow}>
-          <Text style={styles.welcomeIcon}>🤝</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.welcomeEyebrow}>SEVA</Text>
-            <Text style={styles.welcomeHeading}>Offer your time and skills</Text>
+        <Card>
+          <Field label="Donation amount (₹)" keyboardType="decimal-pad" value={amount} onChangeText={(v) => setAmount(v.replace(/[^\d.]/g, ''))} />
+          <View style={styles.presets}>
+            {PRESET_AMOUNTS.map((p) => {
+              const active = Number(amount) === p;
+              return <Pressable key={p} onPress={() => setAmount(String(p))} style={[styles.preset, active && styles.presetActive]} accessibilityRole="button" accessibilityState={{ selected: active }}>
+                <Text style={[styles.presetText, active && styles.presetTextActive]}>{money(p)}</Text>
+              </Pressable>;
+            })}
           </View>
-        </View>
-        <Text style={ui.small}>
-          Selfless service in support of the community. Apply for any role that speaks to you.
-        </Text>
-      </Card>
-
-      {loading ? (
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator color={Palette.gold} size="large" />
-        </View>
-      ) : opportunities.length === 0 ? (
-        <Card style={styles.emptyCard}>
-          <Text style={styles.emptyIcon}>🤝</Text>
-          <Text style={styles.emptyTitle}>No active Seva roles</Text>
-          <Text style={[ui.small, { textAlign: 'center' }]}>
-            All volunteer positions are currently filled. Check back soon.
-          </Text>
+          <Field label="Purpose" placeholder="What would you like to support?" value={purpose} onChangeText={setPurpose} maxLength={200} />
+          <Field label="Address" placeholder="Donor address" value={address} onChangeText={setAddress} multiline maxLength={500} />
+          <Field label="Message (optional)" placeholder="Add a note for the organisation" value={message} onChangeText={setMessage} multiline maxLength={500} />
+          {formError ? <Notice tone="error">{formError}</Notice> : null}
+          <ActionButton icon="heart" label={`Donate ${Number(amount) > 0 ? money(Number(amount)) : ''}`.trim()} onPress={openCheckout} />
+          <Text style={[ui.small, { textAlign: 'center' }]}>Payments are processed securely by Razorpay (test mode).</Text>
         </Card>
-      ) : (
-        <View style={{ gap: 12 }}>
-          {opportunities.map((opp) => (
-            <Card key={opp.id} style={styles.sevaCard}>
-              <View style={styles.sevaHeader}>
-                <View style={styles.sevaCatBadge}>
-                  <Text style={styles.sevaCatText}>{opp.category.toUpperCase()}</Text>
-                </View>
-                <Text style={ui.small}>
-                  {opp.current_volunteers} / {opp.required_volunteers} volunteers
-                </Text>
-              </View>
-              <Text style={styles.sevaTitle}>{opp.title}</Text>
-              <Text style={styles.sevaLocation}>📍 {opp.location}</Text>
-              <Text style={[ui.small, { lineHeight: 18, marginTop: 2 }]}>{opp.description}</Text>
-              <Pressable
-                style={[styles.sevaApplyBtn, opp.applied_by_user && styles.sevaApplyBtnDone]}
-                onPress={() => handleApply(opp)}
-              >
-                <Text
-                  style={[
-                    styles.sevaApplyText,
-                    opp.applied_by_user && styles.sevaApplyTextDone,
-                  ]}
-                >
-                  {opp.applied_by_user
-                    ? '✓ Seva Application Submitted'
-                    : 'Offer Seva / Volunteer'}
-                </Text>
-              </Pressable>
-            </Card>
-          ))}
-        </View>
-      )}
-    </View>
-  );
+
+        <RazorpayCheckoutSheet
+          visible={checkoutOpen}
+          amount={Number(amount) || 0}
+          merchantName={Brand.name}
+          purpose="General donation"
+          details={[
+            { label: 'Purpose', value: purpose },
+            { label: 'Donor', value: user?.name || 'Member' },
+          ]}
+          token={session ?? null}
+          createOrder={() => apiCreateDonationPaymentOrder(session!, { amount: Number(amount), purpose: purpose.trim(), address: address.trim(), message: message.trim() })}
+          onPaymentComplete={handlePaymentComplete}
+          processingLabel={undefined}
+          onClose={() => setCheckoutOpen(false)}
+        />
+      </Screen>
+    </KeyboardAvoidingView>;
+  }
+
+  // ── Home ──
+  return <Screen>
+    <AppHeader title="Give" />
+
+    <Card style={styles.welcome}>
+      <Eyebrow>GENERAL FUND</Eyebrow>
+      <Text style={styles.welcomeTitle}>Support the work of {Brand.name}</Text>
+      <ActionButton icon="heart" label="Donate now" onPress={() => { setFormError(''); setStep('form'); }} />
+    </Card>
+
+    <SectionTitle>Donation history</SectionTitle>
+    {loading ? <Loading /> : historyError ? (
+      <EmptyState icon="alert-circle-outline" title="Unable to load donations" message={historyError} action={<ActionButton variant="outline" label="Try again" onPress={() => { setLoading(true); void loadHistory(); }} />} />
+    ) : donations.length === 0 ? (
+      <EmptyState icon="heart-outline" title="No donations yet" message="Your donation records will appear here." />
+    ) : (
+      <View style={{ gap: 10 }}>
+        {donations.map((d) => <Card key={d.id} style={styles.historyItem}>
+          <View style={styles.historyTop}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={styles.historyPurpose} numberOfLines={2}>{d.purpose || 'Donation to the organisation'}</Text>
+              <Text style={ui.small}>{formatDate(d.created_at)}{d.source === 'offline' ? ' · Recorded offline' : ''}</Text>
+            </View>
+            <View style={{ alignItems: 'flex-end', gap: 6 }}>
+              <Text style={styles.historyAmount}>{money(d.amount)}</Text>
+              <StatusBadge status={d.status} />
+            </View>
+          </View>
+          {d.status === 'confirmed' ? (
+            <Pressable onPress={() => viewReceipt(d)} style={styles.receiptLink} accessibilityRole="button">
+              <Ionicons name="receipt-outline" size={16} color={Palette.goldDark} />
+              <Text style={styles.receiptLinkText}>View receipt</Text>
+            </Pressable>
+          ) : null}
+        </Card>)}
+      </View>
+    )}
+  </Screen>;
 }
 
-// ─── Styles ────────────────────────────────────────────────────────────────────
+function ReceiptRow({ label, value }: { label: string; value: string }) {
+  return <View style={styles.receiptRow}>
+    <Text style={ui.small}>{label}</Text>
+    <Text style={styles.receiptValue}>{value}</Text>
+  </View>;
+}
 
 const styles = StyleSheet.create({
-  // Segment controller
-  segmentContainer: {
-    flexDirection: 'row',
-    backgroundColor: Palette.surface,
-    borderRadius: 18,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: Palette.line,
-    marginVertical: 12,
-  },
-  segBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  segBtnActive: { backgroundColor: Palette.goldDark },
-  segText: { color: Palette.charcoal, fontSize: 13, fontWeight: '700' },
-  segTextActive: { color: Palette.surface },
-
-  // Welcome card
-  welcomeCard: { backgroundColor: Palette.goldSoft, borderColor: Palette.gold, gap: 10 },
-  welcomeIconRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  welcomeIcon: { fontSize: 28, marginTop: 2 },
-  welcomeEyebrow: { color: Palette.goldDark, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
-  welcomeHeading: {
-    color: Palette.charcoal,
-    fontFamily: 'serif',
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 24,
-    marginTop: 2,
-  },
-
-  // Notice
-  noticeCard: { backgroundColor: '#D1FAE5', borderColor: '#6EE7B7' },
-  noticeText: { color: '#065F46', fontSize: 14, fontWeight: '700' },
-
-  // Form
-  formCard: { gap: 14 },
-  fieldLabel: { color: Palette.charcoal, fontSize: 14, fontWeight: '700', marginBottom: -6 },
-  presetsRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  presetBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Palette.ivory,
-    borderWidth: 1,
-    borderColor: Palette.line,
-  },
-  presetBtnActive: { backgroundColor: Palette.goldDark, borderColor: Palette.goldDark },
-  presetText: { color: Palette.charcoal, fontSize: 13, fontWeight: '700' },
-  presetTextActive: { color: Palette.surface },
-  amountInput: {
-    backgroundColor: Palette.ivory,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Palette.line,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: Palette.charcoal,
-    fontSize: 16,
-  },
-  messageInput: {
-    backgroundColor: Palette.ivory,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Palette.line,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: Palette.charcoal,
-    fontSize: 15,
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  anonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: Palette.ivory,
-    borderRadius: 14,
-    padding: 14,
-  },
-  anonLabel: { color: Palette.charcoal, fontSize: 14, fontWeight: '600' },
-  errorText: { color: Palette.danger, fontSize: 13 },
-  submitBtn: {
-    backgroundColor: Palette.charcoal,
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  submitBtnDisabled: { opacity: 0.6 },
-  submitBtnText: { color: Palette.surface, fontSize: 15, fontWeight: '700' },
-
-  // History
-  loadingWrap: { paddingVertical: 32, alignItems: 'center' },
-  historyList: { gap: 10 },
-  historyItem: { gap: 0 },
-  historyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  historyTitle: { color: Palette.charcoal, fontSize: 14, fontWeight: '700' },
-  historyRight: { alignItems: 'flex-end', gap: 6, flexShrink: 0 },
-  historyAmount: {
-    color: Palette.goldDark,
-    fontFamily: 'serif',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  statusBadge: {
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  statusText: { fontSize: 11, fontWeight: '700' },
-
-  // Empty
-  emptyCard: { alignItems: 'center', gap: 10, paddingVertical: 36 },
-  emptyIcon: { fontSize: 44 },
-  emptyTitle: {
-    color: Palette.charcoal,
-    fontFamily: 'serif',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-
-  // Seva
-  sevaCard: { gap: 8, padding: 16 },
-  sevaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  sevaCatBadge: {
-    backgroundColor: '#D1FAE5',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  sevaCatText: { color: '#047857', fontSize: 10, fontWeight: '800' },
-  sevaTitle: {
-    color: Palette.charcoal,
-    fontFamily: 'serif',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  sevaLocation: { color: Palette.goldDark, fontSize: 12, fontWeight: '600' },
-  sevaApplyBtn: {
-    backgroundColor: Palette.surface,
-    borderWidth: 1,
-    borderColor: Palette.goldDark,
-    paddingVertical: 10,
-    borderRadius: 14,
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  sevaApplyBtnDone: { backgroundColor: '#059669', borderColor: '#059669' },
-  sevaApplyText: { color: Palette.goldDark, fontSize: 14, fontWeight: '700' },
-  sevaApplyTextDone: { color: Palette.surface },
+  welcome: { gap: 10 },
+  welcomeTitle: { fontFamily: BrandFonts.heading, fontSize: 22, lineHeight: 29, color: Palette.charcoal },
+  back: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 4 },
+  backText: { fontFamily: BrandFonts.bodySemi, fontSize: 15, color: Palette.goldDark },
+  presets: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  preset: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: Palette.line, backgroundColor: Palette.surfaceRaised },
+  presetActive: { backgroundColor: Palette.gold, borderColor: Palette.gold },
+  presetText: { fontFamily: BrandFonts.bodySemi, fontSize: 14, color: Palette.charcoal },
+  presetTextActive: { color: Palette.onAccent },
+  historyItem: { gap: 10 },
+  historyTop: { flexDirection: 'row', gap: 12 },
+  historyPurpose: { fontFamily: BrandFonts.bodySemi, fontSize: 15, color: Palette.charcoal },
+  historyAmount: { fontFamily: BrandFonts.heading, fontSize: 18, color: Palette.charcoal },
+  receiptLink: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
+  receiptLinkText: { fontFamily: BrandFonts.bodySemi, fontSize: 14, color: Palette.goldDark },
+  receipt: { gap: 12, borderColor: Palette.gold },
+  receiptHead: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: Palette.line },
+  receiptBrand: { fontFamily: BrandFonts.heading, fontSize: 18, color: Palette.goldDark },
+  receiptTitle: { fontFamily: BrandFonts.heading, fontSize: 20, lineHeight: 26, color: Palette.charcoal },
+  receiptNumber: { fontFamily: BrandFonts.bodySemi, fontSize: 13, color: Palette.stone },
+  receiptRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Palette.line },
+  receiptValue: { fontFamily: BrandFonts.bodySemi, fontSize: 15, color: Palette.charcoal, flexShrink: 1, textAlign: 'right' },
 });

@@ -1,23 +1,15 @@
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppHeader, Card, Pill, Screen, SectionTitle, ui } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import { BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import { type Course, type Meditation, apiGetCourses, apiGetMeditations, apiGetMeditationStats } from '@/services/api';
 
 type Segment = 'courses' | 'meditations';
-
-type ScopeTab = 'all' | 'free' | 'purchased';
-
-const SCOPE_TABS: { key: ScopeTab; label: string }[] = [
-  { key: 'all',       label: 'All' },
-  { key: 'free',      label: 'Free' },
-  { key: 'purchased', label: 'Purchased' },
-];
 
 const LEVEL_COLOR: Record<string, string> = {
   Beginner: '#D4EDDA',
@@ -38,6 +30,7 @@ function formatMin(sec: number | null | undefined): string {
 
 export default function LearnScreen() {
   const { session } = useSession();
+  const params = useLocalSearchParams<{ segment?: string }>();
   const [segment, setSegment] = useState<Segment>('courses');
 
   // ── Courses state ──────────────────────────────────────────────────────────
@@ -58,7 +51,7 @@ export default function LearnScreen() {
   const [completedCount, setCompletedCount] = useState(0);
   const [medsLoading, setMedsLoading] = useState(false);
   const [medsLoaded, setMedsLoaded] = useState(false);
-  const [activeScope, setActiveScope] = useState<ScopeTab>('all');
+  const medsLoadedRef = useRef(false);
 
   const fetchMeditations = useCallback(async () => {
     if (!session) return;
@@ -74,33 +67,41 @@ export default function LearnScreen() {
     }
     setMedsLoading(false);
     setMedsLoaded(true);
+    medsLoadedRef.current = true;
   }, [session]);
 
+  // Lazy-load meditations the first time user switches to that segment
+  const handleSegment = useCallback((s: Segment) => {
+    setSegment(s);
+    if (s === 'meditations' && !medsLoaded) fetchMeditations();
+  }, [medsLoaded, fetchMeditations]);
+
+  // If navigated with ?segment=meditations (e.g. from Home "Explore meditations")
+  useEffect(() => {
+    if (params.segment === 'meditations') {
+      handleSegment('meditations');
+    }
+  }, [params.segment, handleSegment]);
+
+  // Refetch on focus so purchases made on the detail screen (which unlock
+  // meditations) are reflected when the user navigates back here.
   useFocusEffect(
     useCallback(() => {
       fetchCourses();
-    }, [fetchCourses])
+      if (medsLoadedRef.current) fetchMeditations();
+    }, [fetchCourses, fetchMeditations])
   );
-
-  // Lazy-load meditations the first time user switches to that segment
-  const handleSegment = (s: Segment) => {
-    setSegment(s);
-    if (s === 'meditations' && !medsLoaded) fetchMeditations();
-  };
 
   const inProgress = courses.find((c) => (c.progress_pct ?? 0) > 0 && (c.progress_pct ?? 0) < 100);
   const rest = courses.filter((c) => c.id !== inProgress?.id).slice(0, 4);
 
-  const displayedMeds =
-    activeScope === 'free'      ? meditations.filter((m) => !m.course_id) :
-    activeScope === 'purchased' ? meditations.filter((m) => m.course_id && !m.locked) :
-    meditations;
+  const displayedMeds = meditations;
   const featuredMed = displayedMeds[0] ?? null;
   const medsListData = displayedMeds.slice(1);
 
   return (
     <Screen>
-      <AppHeader title="Learn" subtitle="Wisdom for everyday life" />
+      <AppHeader title="Learn" />
 
       {/* ── Segment switcher: Courses | Meditation ── */}
       <View style={styles.switcher}>
@@ -135,13 +136,6 @@ export default function LearnScreen() {
       {/* ═══════════════════════════════ COURSES ═══════════════════════════════ */}
       {segment === 'courses' && (
         <>
-          <View>
-            <Text style={ui.title}>Your learning path</Text>
-            <Text style={[ui.body, { marginTop: 6 }]}>
-              Structured teachings to support your practice — explore at your own pace.
-            </Text>
-          </View>
-
           {coursesLoading && (
             <View style={styles.loadingWrap}>
               <ActivityIndicator color={Palette.gold} size="large" />
@@ -197,7 +191,7 @@ export default function LearnScreen() {
                   <SectionTitle
                     action={
                       <Pressable onPress={() => router.push('/courses' as any)}>
-                        <Text style={styles.seeAll}>See all ›</Text>
+                        <Text style={styles.seeAll}>See all</Text>
                       </Pressable>
                     }
                   >
@@ -220,11 +214,11 @@ export default function LearnScreen() {
                                 {c.total_lessons ? `${c.total_lessons} lesson${c.total_lessons !== 1 ? 's' : ''}` : 'View course'}
                               </Text>
                               {(c.progress_pct ?? 0) === 100 && (
-                                <Text style={styles.completedMark}>✓ Done</Text>
+                                <Text style={styles.completedMark}>Done</Text>
                               )}
                             </View>
                           </View>
-                          <Text style={styles.arrow}>›</Text>
+                          <Ionicons name="chevron-forward" size={20} color={Palette.goldDark} />
                         </Card>
                       </Pressable>
                     ))}
@@ -258,13 +252,6 @@ export default function LearnScreen() {
       {/* ═══════════════════════════════ MEDITATIONS ════════════════════════════ */}
       {segment === 'meditations' && (
         <>
-          <View>
-            <Text style={ui.title}>Meditation Sanctuary</Text>
-            <Text style={[ui.body, { marginTop: 6 }]}>
-              Guided sessions, sound baths and stillness — explore at your own pace.
-            </Text>
-          </View>
-
           {/* Stats strip */}
           <View style={styles.statsStrip}>
             <View style={styles.statBox}>
@@ -283,39 +270,19 @@ export default function LearnScreen() {
             </View>
           </View>
 
-          {/* Scope filter */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catBar}>
-            {SCOPE_TABS.map((tab) => {
-              const active = activeScope === tab.key;
-              return (
-                <Pressable
-                  key={tab.key}
-                  onPress={() => setActiveScope(tab.key)}
-                  style={[styles.catPill, active && styles.catPillActive]}
-                >
-                  <Text style={[styles.catText, active && styles.catTextActive]}>{tab.label}</Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-
           {medsLoading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator color={Palette.gold} size="large" />
             </View>
           ) : (
             <>
-              {featuredMed && activeScope !== 'purchased' && (
+              {featuredMed && (
                 <>
                   <SectionTitle>Featured practice</SectionTitle>
                   <Pressable onPress={() => !featuredMed.locked && router.push(`/meditation/${featuredMed.id}` as any)}>
                     <Card style={styles.featuredMed}>
                       <View style={styles.featuredMedHeader}>
-                        <View style={styles.catBadge}>
-                          <Text style={styles.catBadgeText}>
-                            {(featuredMed.category ?? 'General').toUpperCase()}
-                          </Text>
-                        </View>
+                        <View />
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           {featuredMed.duration_sec > 0 && (
                             <Text style={styles.durBadge}>{formatMin(featuredMed.duration_sec)}</Text>
@@ -333,7 +300,7 @@ export default function LearnScreen() {
                       ) : null}
                       <View style={styles.featuredMedFooter}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <Ionicons name="person-circle-outline" size={22} color="#E0E7FF" />
+                          <Ionicons name="person-circle-outline" size={22} color={Palette.goldSoft} />
                           <Text style={styles.guideName}>{featuredMed.guide_name}</Text>
                         </View>
                         {!featuredMed.locked && (
@@ -347,29 +314,16 @@ export default function LearnScreen() {
                 </>
               )}
 
-              <SectionTitle>
-                {activeScope === 'free' ? 'Free Sessions'
-                  : activeScope === 'purchased' ? 'Your Purchased Sessions'
-                  : 'All Sessions'}
-              </SectionTitle>
+              <SectionTitle>All sessions</SectionTitle>
 
               {displayedMeds.length === 0 ? (
                 <Card style={styles.empty}>
                   <Ionicons name="headset-outline" size={44} color={Palette.stoneLight} />
-                  <Text style={styles.emptyTitle}>
-                    {activeScope === 'free' ? 'No free sessions available'
-                      : activeScope === 'purchased' ? 'No purchased sessions yet'
-                      : 'No sessions available'}
-                  </Text>
-                  <Text style={[ui.small, { textAlign: 'center' }]}>
-                    {activeScope === 'purchased'
-                      ? 'Enroll in a course to unlock its meditations here.'
-                      : 'Check back soon.'}
-                  </Text>
+                  <Text style={styles.emptyTitle}>No sessions available</Text>
                 </Card>
               ) : (
                 <View style={styles.list}>
-                  {(activeScope === 'all' ? medsListData : displayedMeds).map((m) => (
+                  {medsListData.map((m) => (
                     <MeditationRow key={m.id} item={m} />
                   ))}
                 </View>
@@ -411,7 +365,7 @@ function MeditationRow({ item }: { item: Meditation }) {
             </Text>
           )}
           {!item.locked && item.completed && (
-            <Text style={mStyles.done}>✓ Completed</Text>
+            <Text style={mStyles.done}>Completed</Text>
           )}
         </View>
         <View style={[mStyles.play, item.locked && mStyles.playLocked]}>
@@ -456,7 +410,7 @@ const styles = StyleSheet.create({
   },
   featuredBody: { padding: 18, gap: 8 },
   featuredTitle: {
-    color: Palette.charcoal, fontFamily: 'serif',
+    color: Palette.charcoal, fontFamily: BrandFonts.heading,
     fontSize: 22, fontWeight: '700', lineHeight: 28,
   },
   track: { height: 7, borderRadius: 8, backgroundColor: Palette.goldSoft, overflow: 'hidden' },
@@ -467,7 +421,7 @@ const styles = StyleSheet.create({
   seeAll: { color: Palette.goldDark, fontSize: 14, fontWeight: '700' },
   list: { gap: 10 },
   courseRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderRadius: 20 },
-  number: { color: Palette.goldDark, fontFamily: 'serif', fontSize: 22, fontWeight: '700', minWidth: 34, textAlign: 'center' },
+  number: { color: Palette.goldDark, fontFamily: BrandFonts.heading, fontSize: 22, minWidth: 34, textAlign: 'center' },
   courseInfo: { flex: 1, gap: 5 },
   courseTitle: { color: Palette.charcoal, fontWeight: '700', fontSize: 15 },
   courseMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
@@ -484,7 +438,7 @@ const styles = StyleSheet.create({
   },
   browseBtnText: { color: Palette.goldDark, fontSize: 16, fontWeight: '700' },
   empty: { alignItems: 'center', gap: 12, paddingVertical: 40 },
-  emptyTitle: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 20, fontWeight: '700' },
+  emptyTitle: { color: Palette.charcoal, fontFamily: BrandFonts.heading, fontSize: 20 },
 
   // Meditation stats strip
   statsStrip: {
@@ -493,7 +447,7 @@ const styles = StyleSheet.create({
     borderRadius: 20, borderWidth: 1, borderColor: Palette.line,
   },
   statBox: { alignItems: 'center' },
-  statVal: { color: Palette.goldDark, fontFamily: 'serif', fontSize: 22, fontWeight: '700' },
+  statVal: { color: Palette.goldDark, fontFamily: BrandFonts.heading, fontSize: 22 },
   statLbl: { color: Palette.stone, fontSize: 11, fontWeight: '600', marginTop: 2 },
   statDivider: { width: 1, height: 28, backgroundColor: Palette.line },
 
@@ -508,28 +462,28 @@ const styles = StyleSheet.create({
   catTextActive: { color: Palette.surface, fontWeight: '700' },
 
   // Featured meditation card
-  featuredMed: { backgroundColor: '#1E1B4B', padding: 20, borderRadius: 24, gap: 12 },
+  featuredMed: { backgroundColor: Palette.brown, padding: 20, borderRadius: 24, gap: 12 },
   featuredMedHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   catBadge: { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  catBadgeText: { color: '#E0E7FF', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
-  durBadge: { color: '#C7D2FE', fontSize: 12, fontWeight: '700' },
+  catBadgeText: { color: Palette.goldSoft, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  durBadge: { color: Palette.goldSoft, fontSize: 12, fontWeight: '700' },
   lockBadge: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  lockBadgeText: { color: '#FCA5A5', fontSize: 11, fontWeight: '700' },
-  featuredMedTitle: { color: '#FFFFFF', fontFamily: 'serif', fontSize: 22, fontWeight: '700', lineHeight: 28 },
-  featuredMedDesc: { color: '#A5B4FC', fontSize: 14, lineHeight: 20 },
+  lockBadgeText: { color: Palette.goldSoft, fontSize: 11, fontWeight: '700' },
+  featuredMedTitle: { color: Palette.onAccent, fontFamily: BrandFonts.heading, fontSize: 22, lineHeight: 28 },
+  featuredMedDesc: { color: Palette.goldSoft, fontSize: 14, lineHeight: 20 },
   featuredMedFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
-  guideName: { color: '#E0E7FF', fontSize: 13, fontWeight: '600' },
+  guideName: { color: Palette.goldSoft, fontSize: 13, fontWeight: '600' },
   playFab: { width: 44, height: 44, borderRadius: 22, backgroundColor: Palette.gold, alignItems: 'center', justifyContent: 'center' },
 });
 
 const mStyles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 20, gap: 14 },
-  rowLocked: { backgroundColor: '#FAFAFA' },
+  rowLocked: { backgroundColor: Palette.ivory },
   art: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   body: { flex: 1, gap: 4 },
   title: { color: Palette.charcoal, fontSize: 16, fontWeight: '700' },
   guide: { color: Palette.stone, fontSize: 13 },
-  done: { color: '#059669', fontSize: 12, fontWeight: '700' },
+  done: { color: Palette.success, fontSize: 12, fontWeight: '700' },
   play: { width: 38, height: 38, borderRadius: 19, backgroundColor: Palette.goldSoft, alignItems: 'center', justifyContent: 'center' },
   playLocked: { backgroundColor: Palette.line },
 });

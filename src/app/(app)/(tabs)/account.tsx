@@ -1,185 +1,107 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import {
-  AppHeader,
-  AppIcon,
-  Card,
-  ListItem,
-  Screen,
-  SectionTitle,
-  ui,
-} from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import { AppHeader, Avatar, Card, type IoniconName, ListItem, Screen, SectionTitle, ui } from '@/components/karma-ui';
+import { Brand, BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
-import {
-  type DonationRecord,
-  type MyVolunteerApplication,
-  apiGetMyDonations,
-  apiGetMyVolunteering,
-} from '@/services/api';
+import { apiGetMyDonations, apiGetMyEvents, apiGetMyVolunteering } from '@/services/api';
 
-const STATIC_LINKS = [
-  { label: 'Edit Profile',   route: '/edit-profile',   icon: 'settings'  },
-  { label: 'Saved Items',    route: '/bookmarks',       icon: 'heart'     },
-  { label: 'My Orders',      route: '/shop/orders',     icon: 'practice'  },
-  { label: 'Notifications',  route: '/notifications',   icon: 'bell'      },
-  { label: 'Help & Support', route: '/help',            icon: 'spark'     },
-] as const;
+type LinkRow = { label: string; route: string; icon: IoniconName; subtitle?: string };
+
+const Icon = ({ name }: { name: IoniconName }) => <Ionicons name={name} size={20} color={Palette.goldDark} />;
 
 export default function AccountScreen() {
   const { user, session, signOut } = useSession();
+  const [counts, setCounts] = useState<{ donations?: number; events?: number; volunteering?: number }>({});
 
-  const name = user?.name || user?.email?.split('@')[0] || 'Seeker';
-  const initials = name
-    .split(' ')
-    .map((w: string) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-
-  const memberSince = (user as any)?.created_at
-    ? new Date((user as any).created_at).toLocaleDateString('en-US', {
-        month: 'long',
-        year: 'numeric',
-      })
-    : 'Recently joined';
-
-  const [donations, setDonations] = useState<DonationRecord[]>([]);
-  const [volunteering, setVolunteering] = useState<MyVolunteerApplication[]>([]);
-
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!session) return;
-    Promise.allSettled([
-      apiGetMyDonations(session),
-      apiGetMyVolunteering(session),
-    ]).then(([donRes, volRes]) => {
-      if (donRes.status === 'fulfilled' && donRes.value.data)
-        setDonations(donRes.value.data.donations);
-      if (volRes.status === 'fulfilled' && volRes.value.data)
-        setVolunteering(volRes.value.data.applications);
+    void Promise.all([apiGetMyDonations(session), apiGetMyEvents(session), apiGetMyVolunteering(session)]).then(([d, e, v]) => {
+      setCounts({ donations: d.data?.donations.length, events: e.data?.length, volunteering: v.data?.length });
     });
-  }, [session]);
+  }, [session]));
 
-  // Build the history rows with live counts
-  const HISTORY_LINKS = [
-    {
-      label: 'My Donations',
-      subtitle: donations.length > 0 ? `${donations.length} donation${donations.length !== 1 ? 's' : ''}` : 'No donations yet',
-      icon: <Ionicons name="heart-outline" size={20} color={Palette.goldDark} />,
-      route: '/give' as const,
-    },
-    {
-      label: 'My Seva & Volunteering',
-      subtitle: volunteering.length > 0 ? `${volunteering.length} application${volunteering.length !== 1 ? 's' : ''}` : 'No applications yet',
-      icon: <Ionicons name="hand-left-outline" size={20} color={Palette.goldDark} />,
-      route: '/connect' as const,
-    },
+  const name = user?.name || user?.email?.split('@')[0] || 'Member';
+  const isDikshan = (user?.userCategory ?? user?.user_category) === 'dikshan';
+  const memberSince = user?.created_at
+    ? new Date(user.created_at).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    : null;
+  const count = (n: number | undefined, one: string, many: string, empty: string) =>
+    n === undefined ? undefined : n === 0 ? empty : `${n} ${n === 1 ? one : many}`;
+
+  const profileLinks: LinkRow[] = [
+    { label: 'Edit profile', route: '/edit-profile', icon: 'person-circle-outline', subtitle: 'Photo, name, phone and date of birth' },
+    { label: 'My Journey', route: '/journey', icon: 'trail-sign-outline', subtitle: 'Your practice and learning at a glance' },
+    { label: 'Settings', route: '/settings', icon: 'settings-outline', subtitle: 'Password, notifications and preferences' },
+  ];
+  const activityLinks: LinkRow[] = [
+    { label: 'My Events', route: '/events/my', icon: 'calendar-outline', subtitle: count(counts.events, 'event', 'events', 'No registrations yet') },
+    { label: 'My Volunteering', route: '/volunteering/my', icon: 'hand-left-outline', subtitle: count(counts.volunteering, 'application', 'applications', 'No applications yet') },
+    { label: 'My Donations', route: '/give', icon: 'heart-outline', subtitle: count(counts.donations, 'donation', 'donations', 'No donations yet') },
+    { label: 'My Orders', route: '/shop/orders', icon: 'bag-handle-outline' },
+    { label: 'Saved items', route: '/bookmarks', icon: 'bookmark-outline' },
+    { label: 'Notifications', route: '/notifications', icon: 'notifications-outline' },
+  ];
+  const supportLinks: LinkRow[] = [
+    { label: 'Help centre', route: '/help', icon: 'help-buoy-outline', subtitle: 'FAQs and guides' },
+    { label: 'Support tickets', route: '/support', icon: 'chatbox-ellipses-outline', subtitle: 'Raise and track requests' },
+    { label: `About ${Brand.name}`, route: '/about', icon: 'information-circle-outline' },
   ];
 
-  return (
-    <Screen>
-      <AppHeader title="Account" subtitle="Your personal sanctuary" />
+  const confirmSignOut = () => Alert.alert('Sign out?', 'You will need to sign in again to continue.', [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Sign out', style: 'destructive', onPress: signOut },
+  ]);
 
-      {/* ── Identity card: initials only, no app logo ── */}
-      <Card style={styles.identityCard}>
-        <View style={styles.avatarCircle}>
-          <Text style={styles.initialsText}>{initials}</Text>
+  return <Screen>
+    <AppHeader title="Account" />
+
+    <Card style={styles.identity}>
+      <Avatar name={name} size={72} />
+      <View style={{ flex: 1, gap: 4 }}>
+        <Text style={styles.name}>{name}</Text>
+        <Text style={ui.small}>{user?.email}</Text>
+        <View style={styles.badges}>
+          {isDikshan ? <View style={styles.dikshan}><Ionicons name="sparkles" size={12} color={Palette.onAccent} /><Text style={styles.dikshanText}>DIKSHAN USER</Text></View> : null}
+          {user?.role === 'mentor' ? <View style={styles.member}><Text style={styles.memberText}>MENTOR</Text></View> : null}
+          {memberSince ? <View style={styles.member}><Text style={styles.memberText}>Member since {memberSince}</Text></View> : null}
         </View>
-        <View style={styles.identityCopy}>
-          <Text style={styles.userName}>{name}</Text>
-          <Text style={ui.small}>{user?.email}</Text>
-          <View style={styles.memberBadge}>
-            <Text style={styles.memberBadgeText}>Member since {memberSince}</Text>
-          </View>
-        </View>
-      </Card>
+      </View>
+    </Card>
 
-      {/* ── Your account links ── */}
-      <SectionTitle>Your account</SectionTitle>
-      <Card style={styles.linksCard}>
-        {STATIC_LINKS.map((l, idx) => (
-          <ListItem
-            key={l.route}
-            icon={<AppIcon name={l.icon} active />}
-            title={l.label}
-            onPress={() => router.push(l.route as any)}
-            last={idx === STATIC_LINKS.length - 1}
-          />
-        ))}
-      </Card>
+    <Section title="Profile" rows={profileLinks} />
+    <Section title="Your activity" rows={activityLinks} />
+    <Section title="Help & information" rows={supportLinks} />
 
-      {/* ── History items inside a card, same visual style ── */}
-      <SectionTitle>History</SectionTitle>
-      <Card style={styles.linksCard}>
-        {HISTORY_LINKS.map((l, idx) => (
-          <ListItem
-            key={l.label}
-            icon={l.icon}
-            title={l.label}
-            subtitle={l.subtitle}
-            onPress={() => router.push(l.route as any)}
-            last={idx === HISTORY_LINKS.length - 1}
-          />
-        ))}
-      </Card>
+    <Pressable style={styles.signOut} onPress={confirmSignOut} accessibilityRole="button">
+      <Ionicons name="log-out-outline" size={18} color={Palette.danger} />
+      <Text style={styles.signOutText}>Sign out</Text>
+    </Pressable>
+    <Text style={styles.version}>{Brand.name} · {Brand.tagline} · v1.0.0</Text>
+  </Screen>;
+}
 
-      {/* ── Sign out ── */}
-      <Pressable style={styles.signOutBtn} onPress={signOut}>
-        <Ionicons name="log-out-outline" size={18} color={Palette.danger} />
-        <Text style={styles.signOutText}>Sign out</Text>
-      </Pressable>
-
-      <Text style={styles.version}>Karma Vajra · v1.0.0</Text>
-    </Screen>
-  );
+function Section({ title, rows }: { title: string; rows: LinkRow[] }) {
+  return <>
+    <SectionTitle>{title}</SectionTitle>
+    <Card style={styles.links}>
+      {rows.map((r, i) => <ListItem key={r.route} icon={<Icon name={r.icon} />} title={r.label} subtitle={r.subtitle} onPress={() => router.push(r.route as any)} last={i === rows.length - 1} />)}
+    </Card>
+  </>;
 }
 
 const styles = StyleSheet.create({
-  identityCard: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  avatarCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: Palette.goldSoft,
-    borderWidth: 2,
-    borderColor: Palette.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  initialsText: {
-    color: Palette.goldDark,
-    fontFamily: 'serif',
-    fontSize: 26,
-    fontWeight: '700',
-  },
-  identityCopy: { flex: 1, gap: 4 },
-  userName: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 22, fontWeight: '700' },
-  memberBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: Palette.goldSoft,
-    borderRadius: 20,
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    marginTop: 2,
-  },
-  memberBadgeText: { color: Palette.goldDark, fontSize: 11, fontWeight: '700' },
-
-  linksCard: { gap: 0, paddingVertical: 6 },
-
-  signOutBtn: {
-    minHeight: 52,
-    borderRadius: 17,
-    backgroundColor: Palette.blush,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  signOutText: { color: Palette.danger, fontSize: 16, fontWeight: '800' },
-
-  version: { color: Palette.stoneLight, fontSize: 12, textAlign: 'center', paddingBottom: 8 },
+  identity: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  name: { fontFamily: BrandFonts.heading, fontSize: 22, color: Palette.charcoal },
+  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  dikshan: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Palette.gold, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  dikshanText: { fontFamily: BrandFonts.bodySemi, fontSize: 10, letterSpacing: 0.8, color: Palette.onAccent },
+  member: { backgroundColor: Palette.goldSoft, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  memberText: { fontFamily: BrandFonts.bodyMedium, fontSize: 11, color: Palette.goldDark },
+  links: { paddingVertical: 4, paddingHorizontal: 8, gap: 0 },
+  signOut: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: Palette.dangerSoft, backgroundColor: Palette.surface },
+  signOutText: { fontFamily: BrandFonts.bodySemi, fontSize: 15, color: Palette.danger },
+  version: { fontFamily: BrandFonts.body, fontSize: 12, color: Palette.stoneLight, textAlign: 'center' },
 });

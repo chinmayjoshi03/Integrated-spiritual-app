@@ -1,720 +1,236 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { AppHeader, Card, Pill, SectionTitle, ui } from '@/components/karma-ui';
 import RazorpayCheckoutSheet from '@/components/RazorpayCheckoutSheet';
-import { Palette, Spacing } from '@/constants/theme';
+import {
+  ActionButton,
+  AppHeader,
+  Banner,
+  Card,
+  EmptyState,
+  Eyebrow,
+  Loading,
+  Notice,
+  ProgressBar,
+  Screen,
+  SectionTitle,
+  StatusBadge,
+  ui,
+} from '@/components/karma-ui';
+import { Brand, BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import {
   type CourseDetail,
-  type VerifiedPayment,
+  type Lesson,
   apiCreateCoursePaymentOrder,
   apiEnrollCourse,
+  apiGetCourseBookmarkStatus,
   apiGetCourseDetail,
+  apiGetEnrollmentStatus,
+  apiToggleBookmark,
 } from '@/services/api';
 
-type TabKey = 'lessons' | 'resources' | 'assignments' | 'quiz';
-
-const LEVEL_COLORS: Record<string, { bg: string; text: string }> = {
-  Beginner:     { bg: '#E8F5E9', text: '#1B5E20' },
-  Intermediate: { bg: '#FFF8E1', text: '#7B5500' },
-  Advanced:     { bg: '#FCE4EC', text: '#7B0020' },
-};
+const formatScheduled = (iso: string) =>
+  new Date(iso).toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
 export default function CourseDetailScreen() {
   const { courseId } = useLocalSearchParams<{ courseId: string }>();
-  const { session } = useSession();
+  const id = Number(courseId);
+  const { session, user } = useSession();
+
   const [detail, setDetail] = useState<CourseDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>('lessons');
+  const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [notice, setNotice] = useState('');
   const [enrolled, setEnrolled] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarkBusy, setBookmarkBusy] = useState(false);
 
-  const checkEnrollment = useCallback(async () => {
-    if (!session || !courseId) return;
-    try {
-      const res = await fetch(
-        `${BASE_URL}/api/enrollments/${courseId}/enrollment-status`,
-        { headers: { Authorization: `Bearer ${session}` } }
-      );
-      const data = await res.json();
-      if (data.enrolled) setEnrolled(true);
-    } catch {
-      // silent — not enrolled or network error
-    }
-  }, [session, courseId]);
+  const load = useCallback(async () => {
+    if (!session || !Number.isInteger(id)) return;
+    const [res, status, bookmark] = await Promise.all([
+      apiGetCourseDetail(session, id),
+      apiGetEnrollmentStatus(session, id),
+      apiGetCourseBookmarkStatus(session, id),
+    ]);
+    if (res.error || !res.data) setError(res.error ?? 'Course not found.');
+    else { setError(''); setDetail(res.data); }
+    setEnrolled(Boolean(status.data?.enrolled));
+    setBookmarked(Boolean(bookmark.data?.bookmarked));
+    setLoading(false);
+  }, [session, id]);
 
-  const load = useCallback(
-    async (silent = false) => {
-      if (!session || !courseId) return;
-      if (!silent) setLoading(true);
-      const res = await apiGetCourseDetail(session, Number(courseId));
-      if (res.error) setError(res.error);
-      else setDetail(res.data ?? null);
-      setLoading(false);
-      setRefreshing(false);
-    },
-    [session, courseId]
-  );
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
 
-  useEffect(() => {
-    load();
-    checkEnrollment();
-  }, [load, checkEnrollment]);
-
-  const handleEnroll = async () => {
-    if (!session || !courseId) return;
-
-    const price = Number(detail?.course.price ?? 0);
-
-    // Free course — use the direct enrollment endpoint
-    if (price === 0) {
-      setEnrolling(true);
-      const res = await apiEnrollCourse(session, Number(courseId));
-      setEnrolling(false);
-      if (res.error) {
-        if (res.error.toLowerCase().includes('already enrolled')) {
-          setEnrolled(true);
-        } else {
-          Alert.alert('Could not enroll', res.error);
-        }
-      } else {
-        setEnrolled(true);
-        Alert.alert('Enrolled!', 'You are now enrolled. Happy learning!', [{ text: 'Start learning' }]);
-        load(true);
-      }
-      return;
-    }
-
-    // Paid course — open the checkout sheet
-    setCheckoutOpen(true);
-  };
-
-  const handlePaymentComplete = async (_verified: VerifiedPayment) => {
+  const enroll = async () => {
+    if (!session || !detail) return;
+    setActionError('');
+    if (Number(detail.course.price) > 0) return setCheckoutOpen(true);
+    setEnrolling(true);
+    const res = await apiEnrollCourse(session, id);
+    setEnrolling(false);
+    if (res.error && !res.error.toLowerCase().includes('already enrolled')) return setActionError(res.error);
     setEnrolled(true);
-    Alert.alert('Enrolled! 🙏', 'Your payment was successful. Happy learning!', [{ text: 'Start learning' }]);
-    load(true);
+    setNotice('You are enrolled. Happy learning!');
+    void load();
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator color={Palette.gold} size="large" />
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const toggleBookmark = async () => {
+    if (!session || bookmarkBusy) return;
+    setBookmarkBusy(true);
+    const res = await apiToggleBookmark(session, 'course', id);
+    setBookmarkBusy(false);
+    if (res.error) return setActionError(res.error);
+    setBookmarked(Boolean(res.data?.bookmarked));
+  };
 
+  if (loading) return <Screen><AppHeader title="Course" back /><Loading /></Screen>;
   if (error || !detail) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <AppHeader title="Course" back />
-        <Text style={styles.errorText}>{error ?? 'Course not found.'}</Text>
-      </SafeAreaView>
-    );
+    return <Screen>
+      <AppHeader title="Course" back />
+      <EmptyState icon="school-outline" title="Course unavailable" message={error} action={<ActionButton variant="outline" label="Try again" onPress={() => { setLoading(true); void load(); }} />} />
+    </Screen>;
   }
 
-  const { course, lessons, resources, assignments, quizzes } = detail;
-  const lvlColor = LEVEL_COLORS[course.level ?? ''] ?? { bg: Palette.goldSoft, text: Palette.goldDark };
+  const { course, lessons, locked } = detail;
+  const isMentor = user?.role === 'mentor';
+  const hasFullAccess = enrolled || !locked;
+  const completedCount = lessons.filter((l) => l.completed).length;
+  const pct = lessons.length ? Math.round((completedCount / lessons.length) * 100) : 0;
+  const resumeLesson = lessons.find((l) => !l.completed && l.watched_sec > 0) ?? lessons.find((l) => !l.completed);
+  const hasPreview = lessons.some((l) => l.is_free);
+  const price = Number(course.price);
 
-  const tabs: { key: TabKey; label: string; count: number; emoji: string }[] = [
-    { key: 'lessons',     label: 'Lessons',     count: lessons.length,     emoji: '▶' },
-    { key: 'resources',   label: 'Resources',   count: resources.length,   emoji: '📄' },
-    { key: 'assignments', label: 'Assignments', count: assignments.length, emoji: '✎' },
-    { key: 'quiz',        label: 'Quiz',        count: quizzes.length,     emoji: '?' },
-  ];
+  const openLesson = (lesson: Lesson) => {
+    const lessonLocked = locked && !lesson.is_free;
+    if (lessonLocked) return setActionError('Enroll in this course to unlock this lesson.');
+    router.push(`/courses/${id}/lesson/${lesson.id}` as any);
+  };
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); load(true); }}
-            tintColor={Palette.gold}
-          />
-        }
-      >
-        {/* Back header over dark hero */}
-        <View style={styles.heroOuter}>
-          <View style={styles.heroHeaderRow}>
-            <AppHeader title="" back />
-          </View>
+  return <Screen>
+    <AppHeader title="Course" back />
 
-          {/* Hero */}
-          <View style={styles.heroContent}>
-            <View style={[styles.levelBadge, { backgroundColor: lvlColor.bg }]}>
-              <Text style={[styles.levelText, { color: lvlColor.text }]}>{course.level ?? 'Course'}</Text>
-            </View>
-            <Text style={styles.heroTitle}>{course.title}</Text>
-            {course.description ? (
-              <Text style={styles.heroDesc} numberOfLines={3}>{course.description}</Text>
-            ) : null}
-            <Text style={styles.heroMeta}>
-              {course.total_lessons ? `${course.total_lessons} lessons · ` : ''}{course.completed_lessons ?? 0} completed
-            </Text>
-          </View>
-
-          {/* Progress ring row */}
-          {(course.progress_pct ?? 0) > 0 && (
-            <View style={styles.progressBlock}>
-              <View style={styles.progressLabelRow}>
-                <Text style={styles.progressLabel}>Your progress</Text>
-                <Text style={styles.progressPct}>{course.progress_pct ?? 0}%</Text>
-              </View>
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${course.progress_pct ?? 0}%` }]} />
-              </View>
-            </View>
-          )}
+    <Card style={styles.hero}>
+      <Banner uri={course.thumbnail_url} icon="school-outline" height={180} />
+      <View style={styles.heroBody}>
+        <View style={styles.badges}>
+          <StatusBadge status="neutral" label={(course.delivery_mode || 'online').toUpperCase()} />
+          {hasFullAccess ? <StatusBadge status="approved" label={enrolled ? 'Enrolled' : isMentor ? 'Instructor access' : 'Full access'} /> : null}
         </View>
+        <Text style={styles.title}>{course.title}</Text>
+        <Text style={ui.small}>with {course.mentor_name || 'TBD'}</Text>
+        {course.description ? <Text style={ui.body}>{course.description}</Text> : null}
+        {course.delivery_mode === 'live' ? <Text style={ui.small}>Live session times and Meet links are listed with each lesson.</Text> : null}
+        <Pressable onPress={toggleBookmark} style={styles.bookmark} accessibilityRole="button" accessibilityState={{ selected: bookmarked }} disabled={bookmarkBusy}>
+          <Ionicons name={bookmarked ? 'bookmark' : 'bookmark-outline'} size={18} color={Palette.goldDark} />
+          <Text style={styles.bookmarkText}>{bookmarked ? 'Saved for later' : 'Save course for later'}</Text>
+        </Pressable>
+      </View>
+    </Card>
 
-        {/* Enroll CTA — shown when not enrolled and course has a price */}
-        {!enrolled && Number(course.price) > 0 && (
-          <View style={styles.enrollBanner}>
-            <View style={styles.enrollBannerLeft}>
-              <Text style={styles.enrollBannerEyebrow}>NOT ENROLLED</Text>
-              <Text style={styles.enrollBannerTitle}>
-                ₹{Number(course.price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-              </Text>
-              <Text style={styles.enrollBannerSub}>
-                Enroll to unlock all lessons, resources and assignments.
-              </Text>
-            </View>
-            <Pressable
-              style={[styles.enrollBtn, enrolling && { opacity: 0.6 }]}
-              onPress={handleEnroll}
-              disabled={enrolling}
-            >
-              {enrolling ? (
-                <ActivityIndicator color={Palette.surface} size="small" />
-              ) : (
-                <Text style={styles.enrollBtnText}>Enroll Now</Text>
-              )}
+    {notice ? <Notice tone="success">{notice}</Notice> : null}
+    {actionError ? <Notice tone="error">{actionError}</Notice> : null}
+
+    {!hasFullAccess ? (
+      <Card>
+        <Eyebrow>ENROLL</Eyebrow>
+        <Text style={styles.price}>{price > 0 ? `₹${price.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : 'Free'}</Text>
+        {hasPreview ? <Text style={ui.small}>Preview the free demo lessons below before enrolling.</Text> : null}
+        <ActionButton label={price > 0 ? 'Continue to payment' : 'Enroll for free'} onPress={enroll} loading={enrolling} />
+      </Card>
+    ) : null}
+
+    {enrolled && lessons.length > 0 ? (
+      <Card>
+        <Eyebrow>YOUR PROGRESS</Eyebrow>
+        <View style={styles.progressHead}>
+          <Text style={styles.progressPct}>{pct}% complete</Text>
+          <Text style={ui.small}>{completedCount} of {lessons.length} lessons</Text>
+        </View>
+        <ProgressBar pct={pct} />
+        {resumeLesson ? <ActionButton icon="play-circle-outline" label={`Continue: ${resumeLesson.title}`} onPress={() => openLesson(resumeLesson)} /> : null}
+      </Card>
+    ) : null}
+
+    <SectionTitle>Curriculum & lessons</SectionTitle>
+    {lessons.length === 0 ? <EmptyState icon="list-outline" title="No lessons yet" message="Lessons will appear here once they are added." /> : (
+      <View style={{ gap: 10 }}>
+        {lessons.map((lesson, idx) => {
+          const lessonLocked = locked && !lesson.is_free;
+          const meta = [
+            lesson.is_free && locked ? 'FREE DEMO' : null,
+            (lesson.content_type || 'video').toUpperCase(),
+            lessonLocked ? 'Enroll to unlock' : null,
+            lesson.completed ? 'Completed' : lesson.watched_sec > 0 ? 'Continue where you left off' : null,
+          ].filter(Boolean).join(' · ');
+          return <Card key={lesson.id} style={styles.lessonCard}>
+            <Pressable onPress={() => openLesson(lesson)} accessibilityRole="button" accessibilityLabel={lesson.title} style={styles.lessonRow}>
+              <View style={[styles.lessonNum, lesson.completed && styles.lessonNumDone]}>
+                {lesson.completed
+                  ? <Ionicons name="checkmark" size={18} color={Palette.success} />
+                  : <Text style={styles.lessonNumText}>{lesson.position || idx + 1}</Text>}
+              </View>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={styles.lessonTitle} numberOfLines={2}>{lesson.title}</Text>
+                <Text style={ui.small}>{meta}</Text>
+                {course.delivery_mode === 'live' && lesson.scheduled_at ? <Text style={ui.small}>Live session · {formatScheduled(lesson.scheduled_at)}</Text> : null}
+              </View>
+              <Ionicons
+                name={lessonLocked ? 'lock-closed-outline' : lesson.content_type === 'pdf' ? 'document-text-outline' : 'play-circle-outline'}
+                size={24}
+                color={lessonLocked ? Palette.stoneLight : Palette.gold}
+              />
             </Pressable>
-          </View>
-        )}
-
-        {!enrolled && Number(course.price) === 0 && (
-          <View style={styles.freeEnrollBanner}>
-            <Text style={styles.freeEnrollText}>This course is free</Text>
-            <Pressable
-              style={[styles.enrollBtn, enrolling && { opacity: 0.6 }]}
-              onPress={handleEnroll}
-              disabled={enrolling}
-            >
-              {enrolling ? (
-                <ActivityIndicator color={Palette.surface} size="small" />
-              ) : (
-                <Text style={styles.enrollBtnText}>Enroll Free</Text>
-              )}
-            </Pressable>
-          </View>
-        )}
-
-        {enrolled && (
-          <View style={styles.enrolledBanner}>
-            <Text style={styles.enrolledBannerText}>✓ You are enrolled in this course</Text>
-          </View>
-        )}
-
-        {/* Body card — sits below the dark hero */}
-        <View style={styles.body}>
-
-          {/* Tab bar */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBar}>
-            {tabs.map((t) => (
-              <Pressable
-                key={t.key}
-                style={[styles.tab, activeTab === t.key && styles.tabActive]}
-                onPress={() => setActiveTab(t.key)}
-              >
-                <Text style={[styles.tabEmoji, activeTab === t.key && styles.tabEmojiActive]}>
-                  {t.emoji}
-                </Text>
-                <Text style={[styles.tabLabel, activeTab === t.key && styles.tabLabelActive]}>
-                  {t.label}
-                </Text>
-                {t.count > 0 && (
-                  <View style={[styles.tabBadge, activeTab === t.key && styles.tabBadgeActive]}>
-                    <Text style={[styles.tabBadgeText, activeTab === t.key && styles.tabBadgeTextActive]}>
-                      {t.count}
-                    </Text>
-                  </View>
-                )}
+            {/* Sibling of the row button, not inside it (a link can't sit inside a <button> on web). */}
+            {!lessonLocked && lesson.meet_link ? (
+              <Pressable onPress={() => Linking.openURL(lesson.meet_link!).catch(() => setActionError('Could not open the Meet link.'))} style={styles.meet} accessibilityRole="link">
+                <Ionicons name="videocam-outline" size={15} color={Palette.goldDark} />
+                <Text style={styles.meetText}>Join this lesson</Text>
               </Pressable>
-            ))}
-          </ScrollView>
+            ) : null}
+          </Card>;
+        })}
+      </View>
+    )}
 
-          {/* ── Lessons ── */}
-          {activeTab === 'lessons' && (
-            <View style={styles.section}>
-              {lessons.length === 0 && <EmptyMsg text="No lessons for this course yet." />}
-              {lessons.map((lesson, idx) => (
-                <Pressable
-                  key={lesson.id}
-                  onPress={() => router.push(`/courses/${courseId}/lesson/${lesson.id}` as any)}
-                >
-                  <Card style={styles.lessonCard}>
-                    <View style={[styles.lessonNum, lesson.completed && styles.lessonNumDone]}>
-                      <Text style={[styles.lessonNumText, lesson.completed && styles.lessonNumTextDone]}>
-                        {lesson.completed ? '✓' : String(idx + 1).padStart(2, '0')}
-                      </Text>
-                    </View>
-                    <View style={styles.lessonInfo}>
-                      <Text style={styles.lessonTitle} numberOfLines={2}>{lesson.title}</Text>
-                      <View style={styles.lessonMeta}>
-                        <Text style={styles.lessonDuration}>{formatDuration(lesson.duration_sec)}</Text>
-                        {lesson.is_free && (
-                          <View style={styles.freeBadge}>
-                            <Text style={styles.freeText}>FREE</Text>
-                          </View>
-                        )}
-                        {lesson.watched_sec > 0 && !lesson.completed && (
-                          <Text style={styles.resumeText}>Resume</Text>
-                        )}
-                      </View>
-                    </View>
-                    {lesson.video_filename ? (
-                      <View style={[styles.playBtn, lesson.completed && styles.playBtnDone]}>
-                        <Text style={[styles.playIcon, lesson.completed && styles.playIconDone]}>
-                          {lesson.completed ? '✓' : '▶'}
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={styles.noVideoBtn}>
-                        <Text style={styles.noVideoIcon}>○</Text>
-                      </View>
-                    )}
-                  </Card>
-                </Pressable>
-              ))}
-            </View>
-          )}
-
-          {/* ── Resources ── */}
-          {activeTab === 'resources' && (
-            <View style={styles.section}>
-              {resources.length === 0 && <EmptyMsg text="No resources for this course yet." />}
-              {resources.map((r) => (
-                <Pressable
-                  key={r.id}
-                  onPress={() => router.push(`/courses/${courseId}/resources` as any)}
-                >
-                  <Card style={styles.rowCard}>
-                    <View style={styles.pdfIcon}>
-                      <Text style={styles.pdfIconText}>PDF</Text>
-                      {r.file_url && <View style={styles.availableDot} />}
-                    </View>
-                    <View style={styles.rowInfo}>
-                      <Text style={styles.rowTitle}>{r.title}</Text>
-                      {r.description ? (
-                        <Text style={ui.small} numberOfLines={1}>{r.description}</Text>
-                      ) : null}
-                      <Text style={styles.rowStatus}>
-                        {r.file_url ? '↓  Available' : 'Coming soon'}
-                      </Text>
-                    </View>
-                    <Text style={styles.arrow}>›</Text>
-                  </Card>
-                </Pressable>
-              ))}
-            </View>
-          )}
-
-          {/* ── Assignments ── */}
-          {activeTab === 'assignments' && (
-            <View style={styles.section}>
-              {assignments.length === 0 && <EmptyMsg text="No assignments for this course yet." />}
-              {assignments.map((a) => (
-                <Pressable
-                  key={a.id}
-                  onPress={() => router.push(`/courses/${courseId}/assignments/${a.id}` as any)}
-                >
-                  <Card style={styles.rowCard}>
-                    <View style={[styles.assignIcon, a.submitted_at && styles.assignIconDone]}>
-                      <Text style={styles.assignIconText}>{a.submitted_at ? '✓' : '✎'}</Text>
-                    </View>
-                    <View style={styles.rowInfo}>
-                      <Text style={styles.rowTitle}>{a.title}</Text>
-                      {a.description ? (
-                        <Text style={ui.small} numberOfLines={1}>{a.description}</Text>
-                      ) : null}
-                      {a.submitted_at ? (
-                        <View style={styles.submittedBadge}>
-                          <Text style={styles.submittedText}>✓ Submitted</Text>
-                        </View>
-                      ) : (
-                        <Text style={styles.dueText}>Due in {a.due_offset_days} days</Text>
-                      )}
-                    </View>
-                    <Text style={styles.arrow}>›</Text>
-                  </Card>
-                </Pressable>
-              ))}
-            </View>
-          )}
-
-          {/* ── Quiz ── */}
-          {activeTab === 'quiz' && (
-            <View style={styles.section}>
-              {quizzes.length === 0 && <EmptyMsg text="No quizzes for this course yet." />}
-              {quizzes.map((q) => {
-                const pct = q.best_score !== null && q.total_questions
-                  ? Math.round((q.best_score / q.total_questions) * 100)
-                  : null;
-                return (
-                  <Pressable
-                    key={q.id}
-                    onPress={() => router.push(`/courses/${courseId}/quiz/${q.id}` as any)}
-                  >
-                    <Card style={styles.rowCard}>
-                      <View style={[styles.quizIcon, pct !== null && pct >= 60 && styles.quizIconPass]}>
-                        <Text style={[styles.quizIconText, pct !== null && pct >= 60 && styles.quizIconTextPass]}>
-                          {pct !== null && pct >= 60 ? '✓' : '?'}
-                        </Text>
-                      </View>
-                      <View style={styles.rowInfo}>
-                        <Text style={styles.rowTitle}>{q.title}</Text>
-                        {q.description ? (
-                          <Text style={ui.small} numberOfLines={1}>{q.description}</Text>
-                        ) : null}
-                        {q.best_score !== null && q.total_questions ? (
-                          <Text style={styles.quizScore}>
-                            Best: {q.best_score}/{q.total_questions} ({pct}%)
-                            · {q.attempt_count} attempt{q.attempt_count !== 1 ? 's' : ''}
-                          </Text>
-                        ) : (
-                          <Text style={styles.notAttempted}>Not attempted yet</Text>
-                        )}
-                      </View>
-                      <Text style={styles.arrow}>›</Text>
-                    </Card>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-        </View>
-      </ScrollView>
-
-      {/* ── Razorpay checkout sheet ── */}
-      {detail && (
-        <RazorpayCheckoutSheet
-          visible={checkoutOpen}
-          amount={Number(detail.course.price ?? 0)}
-          merchantName="The Karma Vajra"
-          purpose="Course enrollment"
-          details={[
-            { label: 'Course',     value: detail.course.title },
-            { label: 'Instructor', value: detail.course.mentor_name ?? 'To be announced' },
-          ]}
-          createOrder={() => apiCreateCoursePaymentOrder(session!, Number(courseId))}
-          onPaymentComplete={handlePaymentComplete}
-          token={session}
-          onClose={() => setCheckoutOpen(false)}
-        />
-      )}
-    </SafeAreaView>
-  );
-}
-
-function EmptyMsg({ text }: { text: string }) {
-  return <Text style={styles.emptyMsg}>{text}</Text>;
-}
-
-function formatDuration(sec: number): string {
-  if (!sec) return '—';
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${String(s).padStart(2, '0')} min`;
+    <RazorpayCheckoutSheet
+      visible={checkoutOpen}
+      amount={price}
+      merchantName={Brand.name}
+      purpose="Course enrollment"
+      details={[
+        { label: 'Course', value: course.title },
+        { label: 'Instructor', value: course.mentor_name ?? 'To be announced' },
+      ]}
+      createOrder={() => apiCreateCoursePaymentOrder(session!, id)}
+      onPaymentComplete={() => { setEnrolled(true); setNotice('Payment successful. You are enrolled — happy learning!'); void load(); }}
+      token={session ?? null}
+      onClose={() => setCheckoutOpen(false)}
+    />
+  </Screen>;
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Palette.ivory },
-  scroll: { paddingBottom: 120 },
-  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  errorText: { color: Palette.danger, padding: 24, textAlign: 'center' },
-
-  // ── Hero (dark band) ──
-  heroOuter: {
-    backgroundColor: Palette.charcoal,
-    paddingBottom: 28,
-  },
-  heroHeaderRow: { paddingHorizontal: Spacing.three },
-  heroContent: {
-    paddingHorizontal: Spacing.three,
-    gap: 10,
-    marginTop: 8,
-  },
-  levelBadge: {
-    alignSelf: 'flex-start',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
-  levelText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
-  heroTitle: {
-    color: '#F0E6CC',
-    fontFamily: 'serif',
-    fontSize: 26,
-    fontWeight: '700',
-    lineHeight: 32,
-  },
-  heroDesc: { color: 'rgba(255,255,255,0.55)', fontSize: 14, lineHeight: 20 },
-  heroMeta: { color: 'rgba(255,255,255,0.4)', fontSize: 13 },
-
-  progressBlock: {
-    paddingHorizontal: Spacing.three,
-    gap: 8,
-    marginTop: 16,
-  },
-  progressLabelRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  progressLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 12 },
-  progressPct: { color: Palette.gold, fontSize: 12, fontWeight: '700' },
-  progressTrack: {
-    height: 6,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    overflow: 'hidden',
-  },
-  progressFill: { height: '100%', borderRadius: 6, backgroundColor: Palette.gold },
-
-  // ── Body ──
-  body: {
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.three,
-    gap: Spacing.three,
-  },
-
-  // ── Tab bar ──
-  tabBar: { gap: 8, paddingVertical: 4 },
-  tab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 20,
-    backgroundColor: Palette.surface,
-    borderWidth: 1,
-    borderColor: Palette.line,
-  },
-  tabActive: { backgroundColor: Palette.charcoal, borderColor: Palette.charcoal },
-  tabEmoji: { fontSize: 13, color: Palette.stone },
-  tabEmojiActive: { color: Palette.gold },
-  tabLabel: { color: Palette.stone, fontSize: 13, fontWeight: '600' },
-  tabLabelActive: { color: '#FFFFFF' },
-  tabBadge: {
-    backgroundColor: Palette.line,
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-  },
-  tabBadgeActive: { backgroundColor: 'rgba(255,255,255,0.15)' },
-  tabBadgeText: { color: Palette.stone, fontSize: 11, fontWeight: '700' },
-  tabBadgeTextActive: { color: '#FFFFFF' },
-
-  section: { gap: 10 },
-  emptyMsg: { color: Palette.stoneLight, fontSize: 14, textAlign: 'center', paddingVertical: 24 },
-
-  // ── Lesson card ──
-  lessonCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingVertical: 14,
-    borderRadius: 20,
-  },
-  lessonNum: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Palette.goldSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  lessonNumDone: { backgroundColor: '#D4EDDA' },
-  lessonNumText: { color: Palette.goldDark, fontFamily: 'serif', fontSize: 15, fontWeight: '700' },
-  lessonNumTextDone: { color: '#2D6A4F' },
-  lessonInfo: { flex: 1, gap: 5 },
-  lessonTitle: { color: Palette.charcoal, fontSize: 15, fontWeight: '600' },
-  lessonMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  lessonDuration: { color: Palette.stone, fontSize: 12 },
-  freeBadge: {
-    backgroundColor: '#E8F5E9',
-    borderRadius: 10,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  freeText: { color: '#2D6A4F', fontSize: 10, fontWeight: '800' },
-  resumeText: { color: Palette.goldDark, fontSize: 11, fontWeight: '600' },
-  playBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: Palette.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  playBtnDone: { backgroundColor: '#D4EDDA' },
-  playIcon: { color: Palette.charcoal, fontSize: 14, marginLeft: 2 },
-  playIconDone: { color: '#2D6A4F', marginLeft: 0 },
-  noVideoBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: Palette.line,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  noVideoIcon: { color: Palette.stoneLight, fontSize: 16 },
-
-  // ── Shared row card ──
-  rowCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingVertical: 14,
-    borderRadius: 20,
-  },
-  rowInfo: { flex: 1, gap: 4 },
-  rowTitle: { color: Palette.charcoal, fontSize: 15, fontWeight: '600' },
-  rowStatus: { color: Palette.goldDark, fontSize: 12, fontWeight: '600' },
-
-  // PDF
-  pdfIcon: {
-    width: 46,
-    height: 54,
-    borderRadius: 10,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    position: 'relative',
-  },
-  pdfIconText: { color: '#991B1B', fontSize: 11, fontWeight: '800' },
-  availableDot: {
-    position: 'absolute',
-    top: -3,
-    right: -3,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#22C55E',
-    borderWidth: 2,
-    borderColor: Palette.surface,
-  },
-
-  // Assignment
-  assignIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: Palette.goldSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  assignIconDone: { backgroundColor: '#D4EDDA' },
-  assignIconText: { color: Palette.goldDark, fontSize: 20 },
-  submittedBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#D4EDDA',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginTop: 2,
-  },
-  submittedText: { color: '#2D6A4F', fontSize: 11, fontWeight: '700' },
-  dueText: { color: Palette.stone, fontSize: 12, marginTop: 2 },
-
-  // Quiz
-  quizIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Palette.goldSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  quizIconPass: { backgroundColor: '#D4EDDA' },
-  quizIconText: { color: Palette.goldDark, fontFamily: 'serif', fontSize: 20, fontWeight: '700' },
-  quizIconTextPass: { color: '#2D6A4F' },
-  quizScore: { color: Palette.goldDark, fontSize: 12, fontWeight: '600', marginTop: 2 },
-  notAttempted: { color: Palette.stoneLight, fontSize: 12, marginTop: 2 },
-
-  arrow: { color: Palette.goldDark, fontSize: 28 },
-
-  // ── Enroll CTA ──
-  enrollBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: Palette.charcoal,
-    marginHorizontal: Spacing.three,
-    marginTop: 16,
-    marginBottom: 4,
-    borderRadius: 20,
-    padding: 18,
-    gap: 12,
-  },
-  enrollBannerLeft: { flex: 1, gap: 4 },
-  enrollBannerEyebrow: { color: Palette.stoneLight, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
-  enrollBannerTitle: { color: Palette.gold, fontFamily: 'serif', fontSize: 26, fontWeight: '800' },
-  enrollBannerSub: { color: 'rgba(255,255,255,0.6)', fontSize: 12, lineHeight: 16 },
-  enrollBtn: {
-    backgroundColor: Palette.gold,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 100,
-  },
-  enrollBtnText: { color: Palette.charcoal, fontSize: 14, fontWeight: '800' },
-  freeEnrollBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#D1FAE5',
-    marginHorizontal: Spacing.three,
-    marginTop: 16,
-    marginBottom: 4,
-    borderRadius: 20,
-    padding: 18,
-  },
-  freeEnrollText: { color: '#065F46', fontSize: 15, fontWeight: '700', flex: 1 },
-  enrolledBanner: {
-    backgroundColor: '#D1FAE5',
-    marginHorizontal: Spacing.three,
-    marginTop: 16,
-    marginBottom: 4,
-    borderRadius: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    alignItems: 'center',
-  },
-  enrolledBannerText: { color: '#065F46', fontSize: 14, fontWeight: '700' },
+  hero: { padding: 0, gap: 0, overflow: 'hidden' },
+  heroBody: { padding: 20, gap: 10 },
+  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  title: { fontFamily: BrandFonts.heading, fontSize: 26, lineHeight: 33, color: Palette.charcoal },
+  bookmark: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: Palette.line, backgroundColor: Palette.surfaceRaised },
+  bookmarkText: { fontFamily: BrandFonts.bodySemi, fontSize: 14, color: Palette.goldDark },
+  price: { fontFamily: BrandFonts.heading, fontSize: 30, color: Palette.charcoal },
+  progressHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  progressPct: { fontFamily: BrandFonts.heading, fontSize: 20, color: Palette.charcoal },
+  lessonCard: { paddingVertical: 14, gap: 6 },
+  lessonRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  lessonNum: { width: 42, height: 42, borderRadius: 21, backgroundColor: Palette.goldSoft, alignItems: 'center', justifyContent: 'center' },
+  lessonNumDone: { backgroundColor: Palette.successSoft },
+  lessonNumText: { fontFamily: BrandFonts.heading, fontSize: 16, color: Palette.goldDark },
+  lessonTitle: { fontFamily: BrandFonts.bodySemi, fontSize: 15, color: Palette.charcoal },
+  meet: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 4, marginLeft: 56 },
+  meetText: { fontFamily: BrandFonts.bodySemi, fontSize: 13, color: Palette.goldDark },
 });

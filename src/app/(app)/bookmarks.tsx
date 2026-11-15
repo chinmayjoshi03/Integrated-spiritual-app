@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -10,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader, Card, Screen, ui } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import { BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
 import { type BookmarkItem, apiGetBookmarks, apiToggleBookmark } from '@/services/api';
 
@@ -65,7 +66,7 @@ export default function BookmarksScreen() {
       <Screen>
         <AppHeader
           title="Saved Items"
-          subtitle="Courses, meditations and products you've bookmarked."
+         
           back
         />
 
@@ -81,7 +82,7 @@ export default function BookmarksScreen() {
           </View>
         ) : items.length === 0 ? (
           <Card style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>🔖</Text>
+            <Ionicons name="bookmark-outline" size={44} color={Palette.stoneLight} />
             <Text style={styles.emptyTitle}>No saved items yet</Text>
             <Text style={[ui.small, { textAlign: 'center' }]}>
               Bookmark a course, meditation, or product to keep it here for later.
@@ -112,7 +113,7 @@ export default function BookmarksScreen() {
                         onPress={() => handleRemove(item)}
                         hitSlop={8}
                       >
-                        <Text style={styles.removeBtnIcon}>🔖</Text>
+                        <Ionicons name="bookmark" size={18} color={Palette.goldDark} />
                       </Pressable>
                     </View>
 
@@ -157,7 +158,7 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 48 },
   emptyTitle: {
     color: Palette.charcoal,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 20,
     fontWeight: '700',
   },
@@ -188,14 +189,14 @@ const styles = StyleSheet.create({
   removeBtnIcon: { fontSize: 18 },
   itemTitle: {
     color: Palette.charcoal,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 18,
     fontWeight: '700',
     lineHeight: 24,
   },
   itemPrice: {
     color: Palette.goldDark,
-    fontFamily: 'serif',
+    fontFamily: BrandFonts.heading,
     fontSize: 18,
     fontWeight: '800',
     marginTop: 2,

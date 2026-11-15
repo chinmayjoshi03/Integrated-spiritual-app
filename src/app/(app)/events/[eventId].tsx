@@ -1,231 +1,260 @@
-import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Linking,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Linking, StyleSheet, Text, View } from 'react-native';
 
-import { AppHeader, Card, Pill, Screen, SectionTitle, ui } from '@/components/karma-ui';
-import { Palette } from '@/constants/theme';
+import {
+  ActionButton,
+  AppHeader,
+  Banner,
+  Card,
+  EmptyState,
+  Eyebrow,
+  InfoRow,
+  Loading,
+  Notice,
+  Screen,
+  StatusBadge,
+  ui,
+} from '@/components/karma-ui';
+import { BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
-import { type EventItem, apiGetEventDetail, apiToggleRegisterEvent } from '@/services/api';
+import { shareCalendarFile, shareCertificate } from '@/lib/documents';
+import {
+  buildEventIcs,
+  formatDate,
+  formatDuration,
+  formatTime,
+  getEventLifecycle,
+  getEventStart,
+  lifecycleLabel,
+} from '@/lib/lifecycle';
+import {
+  type EventItem,
+  apiGetEventDetail,
+  apiGetMyEventCertificate,
+  apiHeartbeatEventSession,
+  apiJoinEventSession,
+  apiLeaveEventSession,
+  apiRegisterForEvent,
+} from '@/services/api';
+
+const attendanceLabel = (e: EventItem) =>
+  e.attendance_status === 'present' ? 'Present' : e.attendance_status === 'absent' ? 'Absent' : 'Not recorded yet';
+const certificateLabel = (e: EventItem) =>
+  e.certificate_status === 'available' ? 'Available' : e.certificate_status === 'pending' ? 'Pending' : 'Not available';
 
 export default function EventDetailScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
+  const id = Number(eventId);
   const { session } = useSession();
 
   const [event, setEvent] = useState<EventItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [now, setNow] = useState(() => new Date());
+
   const [registering, setRegistering] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [sessionBusy, setSessionBusy] = useState(false);
+  const [inSession, setInSession] = useState(false);
+  const [certBusy, setCertBusy] = useState(false);
+  const inSessionRef = useRef(false);
 
-  const loadEvent = useCallback(async () => {
-    if (!session || !eventId) return;
-    setLoading(true);
-    const res = await apiGetEventDetail(session, Number(eventId));
-    if (res.data) {
-      setEvent(res.data.event);
-    }
+  const load = useCallback(async () => {
+    if (!session || !Number.isInteger(id)) return;
+    const res = await apiGetEventDetail(session, id);
+    if (res.error || !res.data) setLoadError(res.error ?? 'This event could not be found.');
+    else { setLoadError(''); setEvent(res.data); }
     setLoading(false);
-  }, [session, eventId]);
+  }, [session, id]);
 
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
+
+  // Re-evaluate the lifecycle (upcoming → live → completed) every 15 seconds, like the website.
   useEffect(() => {
-    loadEvent();
-  }, [loadEvent]);
+    const timer = setInterval(() => setNow(new Date()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
 
-  const handleRegister = async () => {
+  // While in a live session: heartbeat every 15s, and when the app comes back to the foreground.
+  useEffect(() => {
+    inSessionRef.current = inSession;
+    if (!inSession || !session || !event) return;
+    const beat = () => { void apiHeartbeatEventSession(session, event.id); };
+    const timer = setInterval(beat, 15_000);
+    const sub = AppState.addEventListener('change', (state) => { if (state === 'active' || state === 'background') beat(); });
+    return () => { clearInterval(timer); sub.remove(); };
+  }, [inSession, session, event]);
+
+  // Leaving the screen ends the session record (website: pagehide → leave).
+  useEffect(() => () => {
+    if (inSessionRef.current && session && Number.isInteger(id)) void apiLeaveEventSession(session, id);
+  }, [session, id]);
+
+  const register = async () => {
     if (!session || !event) return;
-
     setRegistering(true);
-    const res = await apiToggleRegisterEvent(session, event.id);
+    setError('');
+    setMessage('');
+    const res = await apiRegisterForEvent(session, event.id);
     setRegistering(false);
+    if (res.error) return setError(res.error);
+    setMessage(res.data?.message || 'You are registered for this event.');
+    void load();
+  };
 
-    if (res.data) {
-      setEvent((prev) =>
-        prev
-          ? {
-              ...prev,
-              registered_by_user: res.data!.registered,
-              attendees_count: res.data!.attendees_count,
-            }
-          : null
-      );
-
-      if (res.data.registered) {
-        Alert.alert('RSVP Confirmed', 'You are registered for this event. We look forward to being together!');
-      } else {
-        Alert.alert('RSVP Cancelled', 'Your registration has been cancelled.');
-      }
+  const joinSession = async () => {
+    if (!session || !event) return;
+    setSessionBusy(true);
+    setError('');
+    const res = await apiJoinEventSession(session, event.id);
+    setSessionBusy(false);
+    if (res.error) return setError(res.error);
+    setInSession(true);
+    setMessage('Your attendance is being recorded. Keep the app open in the background while you attend.');
+    if (res.data?.meeting_url) {
+      Linking.openURL(res.data.meeting_url).catch(() => setError('Could not open the meeting link on this device.'));
     }
   };
 
-  const handleOpenLink = () => {
-    if (event?.meeting_link) {
-      Linking.openURL(event.meeting_link).catch(() =>
-        Alert.alert('Link Error', 'Unable to open event meeting link.')
-      );
+  const leaveSession = async () => {
+    if (!session || !event) return;
+    setSessionBusy(true);
+    const res = await apiLeaveEventSession(session, event.id);
+    setSessionBusy(false);
+    if (res.error) return setError(res.error);
+    setInSession(false);
+    setMessage('You have left the session.');
+  };
+
+  const addToCalendar = async () => {
+    if (!event) return;
+    try {
+      const ok = await shareCalendarFile(buildEventIcs(event), event.title);
+      if (!ok) setError('Calendar sharing is not available on this device.');
+    } catch {
+      setError('Could not create the calendar file.');
     }
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator color={Palette.gold} size="large" />
+  const downloadCertificate = async () => {
+    if (!session || !event) return;
+    setCertBusy(true);
+    setError('');
+    const res = await apiGetMyEventCertificate(session, event.id);
+    if (res.error || !res.data) {
+      setCertBusy(false);
+      return setError(res.error ?? 'Certificate is not available yet.');
+    }
+    try {
+      await shareCertificate({
+        title: 'Certificate of Participation',
+        participantName: res.data.participant_name,
+        activityName: res.data.event_title,
+        dateLabel: 'Event date',
+        activityDate: formatDate(res.data.event_date),
+        certificateNumber: res.data.certificate_number,
+        issuedDate: res.data.issued_at ? formatDate(res.data.issued_at) : undefined,
+      });
+    } catch {
+      setError('Could not create the certificate PDF.');
+    }
+    setCertBusy(false);
+  };
+
+  if (loading) return <Screen><AppHeader title="Event" back /><Loading /></Screen>;
+  if (loadError || !event) {
+    return <Screen>
+      <AppHeader title="Event" back />
+      <EmptyState icon="calendar-outline" title="Event unavailable" message={loadError} action={<ActionButton variant="outline" label="Try again" onPress={() => { setLoading(true); void load(); }} />} />
+    </Screen>;
+  }
+
+  const lifecycle = getEventLifecycle(event, now);
+  const isOnline = event.event_type === 'online';
+  const isRegistered = Boolean(event.is_registered);
+  const isFull = event.capacity !== null && (event.registered_count ?? 0) >= event.capacity;
+  const canRegister = lifecycle === 'upcoming' && !isRegistered && !isFull;
+  const showCalendar = isRegistered && (lifecycle === 'upcoming' || lifecycle === 'live');
+  const joinOpensAt = getEventStart(event).getTime() - 10 * 60 * 1000;
+  const canJoinSession = isRegistered && isOnline && (lifecycle === 'live' || (lifecycle === 'upcoming' && now.getTime() >= joinOpensAt));
+  const fee = Number(event.fee) > 0 ? `₹${Number(event.fee).toLocaleString('en-IN')}` : 'Free';
+
+  return <Screen>
+    <AppHeader title="Event" back />
+
+    <Card style={styles.hero}>
+      <Banner uri={event.banner_url} icon="calendar-outline" height={190} />
+      <View style={styles.heroBody}>
+        <View style={styles.badges}>
+          <StatusBadge status={isOnline ? 'neutral' : 'neutral'} label={isOnline ? 'Online' : 'In person'} />
+          <StatusBadge status={lifecycle} label={lifecycleLabel(lifecycle)} />
+          {isRegistered ? <StatusBadge status="registered" /> : null}
         </View>
-      </SafeAreaView>
-    );
-  }
+        <Text style={styles.title}>{event.title}</Text>
+        {event.created_by_name ? <Text style={ui.small}>Hosted by {event.created_by_name}</Text> : null}
+      </View>
+    </Card>
 
-  if (!event) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <Screen>
-          <AppHeader title="Event Not Found" back />
-          <Card style={styles.errorCard}>
-            <Text style={styles.errorText}>This event could not be loaded.</Text>
-          </Card>
-        </Screen>
-      </SafeAreaView>
-    );
-  }
+    <Card>
+      <InfoRow icon="calendar-outline" label="Date" value={formatDate(event.event_date)} />
+      <InfoRow icon="time-outline" label="Time" value={`${formatTime(event.start_time)}${event.duration_minutes ? ` · ${formatDuration(event.duration_minutes)}` : ''}`} />
+      {!isOnline && event.location ? <InfoRow icon="location-outline" label="Location" value={event.location} /> : null}
+      <InfoRow icon="people-outline" label="Participants" value={event.capacity === null ? `${event.registered_count ?? 0} registered` : `${event.registered_count ?? 0} / ${event.capacity} registered`} />
+      <InfoRow icon="pricetag-outline" label="Fee" value={fee} />
+    </Card>
 
-  const dateObj = new Date(event.event_date);
-  const formattedDate = dateObj.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
+    {event.description ? <Card>
+      <Eyebrow>ABOUT THIS EVENT</Eyebrow>
+      <Text style={ui.body}>{event.description}</Text>
+    </Card> : null}
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <Screen>
-        <AppHeader title="Gathering Details" subtitle={event.is_online ? 'Online Event' : 'In-Person Event'} back />
+    {isOnline ? <Card>
+      <Eyebrow>MEETING INFORMATION</Eyebrow>
+      <Text style={ui.body}>
+        {isRegistered
+          ? 'Registered participants can enter through Join Session. The meeting address stays private and is opened only after your participation is recorded. Joining opens 10 minutes before the start.'
+          : 'The live session is available to registered participants through Join Session.'}
+      </Text>
+    </Card> : null}
 
-        <Card style={styles.eventMainCard}>
-          <View style={styles.headerPillsRow}>
-            {event.is_online ? (
-              <Pill>ONLINE SANCTUARY</Pill>
-            ) : (
-              <View style={styles.inPersonPill}>
-                <Text style={styles.inPersonText}>IN-PERSON GATHERING</Text>
-              </View>
-            )}
-            <Text style={styles.attendeesBadge}>
-            <Ionicons name="people-outline" size={13} color={Palette.stone} /> {event.attendees_count} Attending
-          </Text>
-          </View>
+    <Card>
+      <Text style={styles.panelTitle}>{lifecycle === 'completed' ? 'Your event' : 'Registration'}</Text>
+      {message ? <Notice tone="success">{message}</Notice> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
 
-          <Text style={styles.title}>{event.title}</Text>
+      {lifecycle === 'draft' ? <Text style={ui.body}>This event is not available for registration.</Text> : null}
+      {lifecycle === 'cancelled' ? <Text style={ui.body}>This event has been cancelled. New registrations are closed.</Text> : null}
+      {lifecycle === 'upcoming' && isRegistered ? <Notice tone="success">You are registered for this event.</Notice> : null}
+      {lifecycle === 'upcoming' && !isRegistered && isFull ? <Notice tone="info">This event is full.</Notice> : null}
 
-          {/* Date & Location Grid */}
-          <View style={styles.detailsGrid}>
-            <View style={styles.detailRow}>
-              <Ionicons name="calendar-outline" size={20} color={Palette.goldDark} />
-              <View>
-                <Text style={styles.detailLabel}>Date & Day</Text>
-                <Text style={styles.detailValue}>{formattedDate}</Text>
-              </View>
-            </View>
+      {canRegister ? <ActionButton icon="checkmark-circle-outline" label="Register" onPress={register} loading={registering} /> : null}
+      {showCalendar ? <ActionButton variant="outline" icon="calendar-outline" label="Add to calendar" onPress={addToCalendar} /> : null}
+      {canJoinSession && !inSession ? <ActionButton icon="videocam-outline" label="Join session" onPress={joinSession} loading={sessionBusy} /> : null}
+      {canJoinSession && inSession ? <ActionButton variant="outline" icon="exit-outline" label="Leave session" onPress={leaveSession} loading={sessionBusy} /> : null}
 
-            <View style={styles.detailRow}>
-              <Ionicons name="time-outline" size={20} color={Palette.goldDark} />
-              <View>
-                <Text style={styles.detailLabel}>Time</Text>
-                <Text style={styles.detailValue}>{event.time_str}</Text>
-              </View>
-            </View>
+      {lifecycle === 'live' && !isRegistered ? <Text style={ui.body}>Registration is closed while this event is live. Join access is available to registered participants.</Text> : null}
+      {lifecycle === 'live' && isRegistered && !isOnline ? <Text style={ui.body}>This event is happening now at the listed location.</Text> : null}
 
-            <View style={styles.detailRow}>
-              <Ionicons name="location-outline" size={20} color={Palette.goldDark} />
-              <View>
-                <Text style={styles.detailLabel}>Location / Venue</Text>
-                <Text style={styles.detailValue}>{event.location}</Text>
-              </View>
-            </View>
-          </View>
-
-          <SectionTitle>About This Gathering</SectionTitle>
-          <Text style={styles.description}>{event.description}</Text>
-
-          {event.is_online && event.meeting_link && event.registered_by_user && (
-            <Pressable style={styles.joinLinkBtn} onPress={handleOpenLink}>
-              <Ionicons name="link-outline" size={16} color="#4338CA" />
-              <Text style={styles.joinLinkText}>Open Online Meeting Link</Text>
-            </Pressable>
-          )}
-
-          {/* RSVP Action Button */}
-          <Pressable
-            style={[styles.rsvpBtn, event.registered_by_user && styles.rsvpBtnDone]}
-            onPress={handleRegister}
-            disabled={registering}
-          >
-            {registering ? (
-              <ActivityIndicator color={Palette.surface} />
-            ) : (
-              <Text style={[styles.rsvpBtnText, event.registered_by_user && styles.rsvpBtnTextDone]}>
-                {event.registered_by_user ? '✓ Confirmed · Tap to Cancel RSVP' : 'Confirm RSVP / Register Now'}
-              </Text>
-            )}
-          </Pressable>
-        </Card>
-      </Screen>
-    </SafeAreaView>
-  );
+      {lifecycle === 'completed' && isRegistered ? <View style={{ gap: 10 }}>
+        <View style={styles.summaryRow}><Text style={ui.small}>Attendance</Text><Text style={styles.summaryValue}>{attendanceLabel(event)}</Text></View>
+        <View style={styles.summaryRow}><Text style={ui.small}>Certificate</Text><Text style={styles.summaryValue}>{certificateLabel(event)}</Text></View>
+        {event.certificate_status === 'available'
+          ? <ActionButton icon="ribbon-outline" label="Download certificate (PDF)" onPress={downloadCertificate} loading={certBusy} />
+          : null}
+      </View> : null}
+      {lifecycle === 'completed' && !isRegistered ? <Text style={ui.body}>This event has ended. Attendance and certificates are available to registered participants.</Text> : null}
+    </Card>
+  </Screen>;
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Palette.ivory },
-  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  errorCard: { padding: 20, alignItems: 'center' },
-  errorText: { color: Palette.danger, fontSize: 16 },
-
-  eventMainCard: { gap: 14, padding: 20 },
-  headerPillsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  inPersonPill: { backgroundColor: '#E0F2FE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  inPersonText: { color: '#0369A1', fontSize: 11, fontWeight: '800' },
-  attendeesBadge: { color: Palette.stone, fontSize: 13, fontWeight: '600' },
-
-  title: { color: Palette.charcoal, fontFamily: 'serif', fontSize: 24, fontWeight: '700', lineHeight: 30 },
-
-  detailsGrid: { gap: 12, backgroundColor: Palette.ivory, padding: 14, borderRadius: 16, marginVertical: 4 },
-  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  detailIcon: { fontSize: 20 },
-  detailLabel: { color: Palette.stone, fontSize: 11, fontWeight: '600' },
-  detailValue: { color: Palette.charcoal, fontSize: 14, fontWeight: '700' },
-
-  description: { color: Palette.charcoal, fontSize: 15, lineHeight: 22 },
-
-  joinLinkBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#EEF2FF',
-    borderWidth: 1,
-    borderColor: '#6366F1',
-    paddingVertical: 12,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    marginVertical: 4,
-  },
-  joinLinkText: { color: '#4338CA', fontSize: 14, fontWeight: '700' },
-
-  rsvpBtn: {
-    backgroundColor: Palette.goldDark,
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  rsvpBtnDone: { backgroundColor: '#059669' },
-  rsvpBtnText: { color: Palette.surface, fontSize: 16, fontWeight: '700' },
-  rsvpBtnTextDone: { color: Palette.surface },
+  hero: { padding: 0, gap: 0, overflow: 'hidden' },
+  heroBody: { padding: 20, gap: 10 },
+  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  title: { fontFamily: BrandFonts.heading, fontSize: 26, lineHeight: 33, color: Palette.charcoal },
+  panelTitle: { fontFamily: BrandFonts.heading, fontSize: 20, color: Palette.charcoal },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Palette.line },
+  summaryValue: { fontFamily: BrandFonts.bodySemi, fontSize: 15, color: Palette.charcoal },
 });
