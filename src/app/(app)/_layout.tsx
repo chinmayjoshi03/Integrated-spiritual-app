@@ -33,7 +33,8 @@ export default function AuthenticatedLayout() {
       <Stack.Screen name="about" />
 
       {/* Practice */}
-      <Stack.Screen name="sadhana" />
+      <Stack.Screen name="sadhana/index" />
+      <Stack.Screen name="sadhana/[date]" />
 
       {/* Help & support */}
       <Stack.Screen name="help" />

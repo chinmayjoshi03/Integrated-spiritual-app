@@ -1,4 +1,5 @@
-import { useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -9,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { activityIcon, DailyActivityCalendar, indiaToday } from '@/components/daily-activity-calendar';
 import { AppHeader, Card, Screen, SectionTitle, ui } from '@/components/karma-ui';
 import { BrandFonts, Palette } from '@/constants/theme';
 import { useSession } from '@/context/auth-context';
@@ -109,11 +111,28 @@ export default function SadhanaScreen() {
                     </Text>
                   )}
 
+                  {sadhana.content_type && sadhana.content_type !== 'text' ? (
+                    <Pressable
+                      style={styles.openBtn}
+                      onPress={() => router.push(`/sadhana/${indiaToday()}` as any)}
+                      accessibilityRole="button"
+                    >
+                      <Ionicons name={activityIcon(sadhana.content_type)} size={18} color={Palette.goldDark} />
+                      <Text style={styles.openBtnText}>
+                        {sadhana.content_type === 'mcq' ? 'Open today’s check-in'
+                          : sadhana.content_type === 'pdf' ? 'Open today’s reading'
+                          : sadhana.content_type === 'meditation' ? 'Open today’s meditation'
+                          : `Open today’s ${sadhana.content_type}`}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={16} color={Palette.goldDark} />
+                    </Pressable>
+                  ) : null}
+
                   {sadhana.completed ? (
                     <View style={styles.completedBadge}>
                       <Text style={styles.completedBadgeText}>Completed today</Text>
                     </View>
-                  ) : (
+                  ) : sadhana.content_type === 'mcq' ? null : (
                     <Pressable
                       style={[styles.completeBtn, saving && styles.completeBtnDisabled]}
                       onPress={handleComplete}
@@ -153,6 +172,13 @@ export default function SadhanaScreen() {
                 <Text style={ui.small}>your personal best</Text>
               </Card>
             </View>
+
+            {/* Activity calendar */}
+            <SectionTitle>Activity calendar</SectionTitle>
+            <Text style={[ui.small, { marginTop: -6 }]}>
+              Tap a day to open its activity. Your calendar records whether you completed each day.
+            </Text>
+            {session ? <DailyActivityCalendar session={session} /> : null}
 
             {/* Community leaderboard */}
             {leaderboard.length > 0 && (
@@ -233,6 +259,19 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   completeBtnDisabled: { opacity: 0.6 },
+  openBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Palette.surface,
+    borderColor: Palette.gold,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 4,
+  },
+  openBtnText: { color: Palette.goldDark, fontSize: 15, fontWeight: '700', flex: 1 },
   completeBtnText: { color: Palette.surface, fontSize: 15, fontWeight: '700' },
 
   // Stats

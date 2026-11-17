@@ -5,9 +5,9 @@ import { Platform } from 'react-native';
 // The app shares the same backend as the website (port 5001). Resolution order:
 //   1. EXPO_PUBLIC_API_URL  — set this for APK builds (eas.json env or .env)
 //   2. Expo Go / dev build  — the laptop serving the JS bundle (follows Wi-Fi IP changes)
-//   3. LOCAL_IP fallback    — your Mac's LAN address (run: ipconfig getifaddr en0)
+//   3. DEPLOYED_API_URL     — the live backend
 const API_PORT = 5001;
-const LOCAL_IP = '10.238.18.190';
+const DEPLOYED_API_URL = 'https://spiritual.techeinnovation.com';
 
 function resolveBaseUrl(): string {
   const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
@@ -20,7 +20,7 @@ function resolveBaseUrl(): string {
   if (__DEV__ && devHost && devHost !== 'localhost' && devHost !== '127.0.0.1') {
     return `http://${devHost}:${API_PORT}`;
   }
-  return `http://${LOCAL_IP}:${API_PORT}`;
+  return DEPLOYED_API_URL;
 }
 
 export const BASE_URL = resolveBaseUrl();
@@ -1083,12 +1083,33 @@ export async function apiCreateDonationPaymentOrder(
 
 // ── Daily Sadhana API ─────────────────────────────────────────────────────────
 
+export type DailyActivityType = 'text' | 'video' | 'audio' | 'pdf' | 'mcq' | 'meditation';
+
+export type DailyActivityQuestion = { prompt: string; options: string[]; answer: number };
+
 export type SadhanaEntry = {
   id: number;
   title: string;
   description: string | null;
   scheduled_for: string;
   completed: boolean;
+  content_type?: DailyActivityType;
+  /** Signed, ready-to-play URL for video / audio / PDF activities. */
+  media_url?: string | null;
+  content_data?: { questions?: DailyActivityQuestion[] } | null;
+  meditation_id?: number | null;
+  meditation_title?: string | null;
+  meditation_media_type?: 'audio' | 'video' | null;
+  meditation_media_url?: string | null;
+};
+
+/** One day in the activity calendar (GET /api/sadhana/calendar). */
+export type DailyActivitySummary = {
+  id: number;
+  title: string;
+  scheduled_for: string;
+  content_type: DailyActivityType;
+  completed?: boolean;
 };
 
 export type SadhanaStreak = {
@@ -1113,6 +1134,30 @@ export async function apiGetTodaySadhana(token: string) {
 export async function apiCompleteSadhana(token: string) {
   return request<{ completed: boolean; streak: SadhanaStreak }>(
     '/api/sadhana/today/complete',
+    { method: 'POST', ...authHeader(token) }
+  );
+}
+
+/** Published activities for a month ("YYYY-MM"), with this member's completion state. */
+export async function apiGetSadhanaCalendar(token: string, month: string) {
+  return request<{ month: string; activities: DailyActivitySummary[] }>(
+    `/api/sadhana/calendar?month=${encodeURIComponent(month)}`,
+    authHeader(token)
+  );
+}
+
+/** Full activity for a date ("YYYY-MM-DD"), including signed media links. */
+export async function apiGetSadhanaByDate(token: string, date: string) {
+  return request<{ activity: SadhanaEntry }>(
+    `/api/sadhana/date/${encodeURIComponent(date)}`,
+    authHeader(token)
+  );
+}
+
+/** Complete a specific activity — only allowed on its scheduled day. */
+export async function apiCompleteSadhanaById(token: string, id: number) {
+  return request<{ completed: boolean; streak: SadhanaStreak }>(
+    `/api/sadhana/${encodeURIComponent(String(id))}/complete`,
     { method: 'POST', ...authHeader(token) }
   );
 }

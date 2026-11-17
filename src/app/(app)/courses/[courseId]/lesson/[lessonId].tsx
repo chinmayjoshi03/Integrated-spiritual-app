@@ -125,12 +125,19 @@ function VideoLesson({ lesson, courseId, session, onCompleted }: LessonProps) {
   const { currentTime } = useEvent(player, 'timeUpdate', { currentTime: player.currentTime, currentLiveTimestamp: null, currentOffsetFromLive: null, bufferedPosition: 0 });
   const duration = player.duration || lesson.duration_sec || 0;
 
+  // Mirror playback position and completion in refs. The native player is released
+  // when the screen unmounts, so the save-on-leave cleanup must not read from it.
+  const positionRef = useRef(lesson.watched_sec);
+  const completedRef = useRef(completed);
+  useEffect(() => { if (currentTime > 0) positionRef.current = currentTime; }, [currentTime]);
+  useEffect(() => { completedRef.current = completed; }, [completed]);
+
   const save = useCallback(async (markComplete: boolean) => {
-    const seconds = Math.floor(player.currentTime || 0);
+    const seconds = Math.floor(positionRef.current || 0);
     const res = await apiMarkLessonProgress(session, courseId, lesson.id, { watched_sec: seconds, completed: markComplete });
     if (!res.error) lastSaved.current = seconds;
     return res.error;
-  }, [player, session, courseId, lesson.id]);
+  }, [session, courseId, lesson.id]);
 
   // Save progress every 15 seconds of playback; auto-complete at 90%.
   useEffect(() => {
@@ -144,7 +151,7 @@ function VideoLesson({ lesson, courseId, session, onCompleted }: LessonProps) {
   }, [currentTime, duration, completed, save, onCompleted]);
 
   // Save on leave.
-  useEffect(() => () => { if (!completed) void save(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { if (!completedRef.current) void save(false); }, [save]);
 
   const markComplete = async () => {
     setSaving(true);
